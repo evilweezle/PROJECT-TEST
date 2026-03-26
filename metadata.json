@@ -1,0 +1,5 @@
+{
+  "name": "SharePoint List Hub",
+  "description": "A centralized hub for managing work orders, parts, clients, and operations using a SharePoint-style list interface powered by Firestore.",
+  "requestFramePermissions": []
+}
