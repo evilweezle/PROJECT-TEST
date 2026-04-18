@@ -1,27 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PlusIcon, TrashIcon, EditIcon, PrinterIcon } from './icons';
 import { Modal } from './Modal';
+import { Search, Filter, X } from 'lucide-react';
 
 interface ManagementPaneProps<T> {
   title: string;
   items: T[];
-  columns: { key: keyof T; header: string; render?: (item: T) => React.ReactNode }[];
+  columns: { 
+    key: keyof T; 
+    header: string; 
+    render?: (item: T) => React.ReactNode;
+    filterable?: boolean;
+    filterOptions?: { value: unknown; label: string }[];
+  }[];
   onDeleteItem: (id: string) => void;
   onEditItem?: (item: T) => void;
   onViewItem?: (item: T) => void;
   renderForm: (onClose: () => void) => React.ReactNode;
+  modalSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+  customActions?: (item: T) => React.ReactNode;
+  renderHeaderActions?: () => React.ReactNode;
 }
 
 export const ManagementPane = <T extends { id: string }>({
   title,
-  items,
-  columns,
+  items = [],
+  columns = [],
   onDeleteItem,
   onEditItem,
   onViewItem,
   renderForm,
+  modalSize = 'lg',
+  customActions,
+  renderHeaderActions,
 }: ManagementPaneProps<T>) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeFilters, setActiveFilters] = useState<Record<string, unknown>>({});
+  const [showFilters, setShowFilters] = useState(false);
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -31,29 +47,132 @@ export const ManagementPane = <T extends { id: string }>({
     setIsModalOpen(false);
   };
 
+  const filteredItems = useMemo(() => {
+    return (items || []).filter((item) => {
+      // Search logic
+      const matchesSearch = searchTerm === '' || Object.values(item).some(val => {
+        if (typeof val === 'string' || typeof val === 'number') {
+          return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        }
+        return false;
+      });
+
+      if (!matchesSearch) return false;
+
+      // Filter logic
+      return Object.entries(activeFilters).every(([key, value]) => {
+        if (value === undefined || value === '') return true;
+        return String(item[key as keyof T]) === String(value);
+      });
+    });
+  }, [items, searchTerm, activeFilters]);
+
+  const columnFilterOptions = useMemo(() => {
+    const options: Record<string, { value: unknown; label: string }[]> = {};
+    columns.forEach(col => {
+      if (col.filterable) {
+        if (col.filterOptions) {
+          options[String(col.key)] = col.filterOptions;
+        } else {
+          const uniqueValues = Array.from(new Set(items.map(item => item[col.key])));
+          options[String(col.key)] = uniqueValues.map(val => ({
+            value: val,
+            label: String(val)
+          }));
+        }
+      }
+    });
+    return options;
+  }, [items, columns]);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setActiveFilters({});
+  };
+
+  const hasActiveFilters = searchTerm !== '' || Object.values(activeFilters).some(v => v !== '' && v !== undefined);
+
   return (
     <div className="bg-white rounded-sm shadow-sm border border-[#EDEBE9] h-full flex flex-col">
-      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:px-6 border-b border-[#EDEBE9]">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-[#323130]">{title}</h2>
-          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">
-            {items.length} items
-          </span>
+      <header className="flex flex-col gap-4 p-4 sm:px-6 border-b border-[#EDEBE9]">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-[#323130]">{title}</h2>
+            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">
+              {filteredItems.length} {filteredItems.length !== items.length ? `of ${items.length}` : ''} items
+            </span>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm border border-[#EDEBE9] rounded-sm focus:outline-none focus:ring-1 focus:ring-[#0078D4] focus:border-[#0078D4]"
+              />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-2 rounded-sm border ${showFilters ? 'bg-slate-100 border-slate-300 text-[#0078D4]' : 'border-[#EDEBE9] text-slate-600 hover:bg-slate-50'}`}
+              title="Toggle Filters"
+            >
+              <Filter className="w-4 h-4" />
+            </button>
+            {renderHeaderActions && renderHeaderActions()}
+            <button
+              onClick={handleOpenModal}
+              className="flex items-center px-4 py-2 text-sm font-semibold text-white bg-[#0078D4] rounded-sm hover:bg-[#106EBE] transition-colors shadow-sm"
+            >
+              <PlusIcon className="w-4 h-4 mr-2" />
+              New
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleOpenModal}
-          className="flex items-center px-4 py-2 text-sm font-semibold text-white bg-[#0078D4] rounded-sm hover:bg-[#106EBE] transition-colors shadow-sm"
-        >
-          <PlusIcon className="w-4 h-4 mr-2" />
-          New
-        </button>
+
+        {(showFilters || hasActiveFilters) && (
+          <div className="flex flex-wrap items-center gap-4 pt-2">
+            {columns.filter(c => c.filterable).map(col => (
+              <div key={String(col.key)} className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">{col.header}:</label>
+                <select
+                  value={activeFilters[String(col.key)] || ''}
+                  onChange={(e) => setActiveFilters(prev => ({ ...prev, [String(col.key)]: e.target.value }))}
+                  className="text-sm border border-[#EDEBE9] rounded-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+                >
+                  <option value="">All</option>
+                  {columnFilterOptions[String(col.key)]?.map(opt => (
+                    <option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {hasActiveFilters && (
+              <button 
+                onClick={clearFilters}
+                className="text-xs text-[#0078D4] hover:underline font-medium"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        )}
       </header>
       
       <div className="flex-1 overflow-auto">
         <table className="min-w-full border-separate border-spacing-0">
           <thead className="bg-white sticky top-0 z-10">
             <tr>
-              {columns.map((col) => (
+              {(columns || []).map((col) => (
                 <th 
                   key={String(col.key)} 
                   scope="col" 
@@ -68,15 +187,20 @@ export const ManagementPane = <T extends { id: string }>({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-[#EDEBE9]">
-            {items.map((item) => (
-              <tr key={item.id} className="hover:bg-[#F3F2F1] transition-colors group">
-                {columns.map((col) => (
+            {filteredItems.map((item) => (
+              <tr 
+                key={item.id} 
+                className="hover:bg-[#F3F2F1] transition-colors group cursor-pointer"
+                onClick={() => onViewItem ? onViewItem(item) : onEditItem?.(item)}
+              >
+                {(columns || []).map((col) => (
                   <td key={`${item.id}-${String(col.key)}`} className="px-6 py-3 whitespace-nowrap text-sm text-[#323130]">
                     {col.render ? col.render(item) : (item[col.key] as React.ReactNode)}
                   </td>
                 ))}
                 <td className="px-6 py-3 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                    {customActions && customActions(item)}
                     {onViewItem && (
                       <button 
                         onClick={() => onViewItem(item)} 
@@ -106,10 +230,10 @@ export const ManagementPane = <T extends { id: string }>({
                 </td>
               </tr>
             ))}
-            {items.length === 0 && (
+            {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={columns.length + 1} className="px-6 py-12 text-center text-slate-400 italic">
-                  No items found in this list.
+                <td colSpan={(columns || []).length + 1} className="px-6 py-12 text-center text-slate-400 italic">
+                  {hasActiveFilters ? 'No items match your filters.' : 'No items found in this list.'}
                 </td>
               </tr>
             )}
@@ -117,7 +241,7 @@ export const ManagementPane = <T extends { id: string }>({
         </table>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={`New ${title.slice(0, -1)}`}>
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={`New ${title.slice(0, -1)}`} size={modalSize}>
         <div className="p-1">
           {renderForm(handleCloseModal)}
         </div>

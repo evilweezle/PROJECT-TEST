@@ -1,5 +1,5 @@
 {
-  "name": "SharePoint List Hub",
-  "description": "A centralized hub for managing work orders, parts, clients, and operations using a SharePoint-style list interface powered by Firestore.",
-  "requestFramePermissions": []
+  "name": "FMI Connect - Gestion Industrielle",
+  "description": "Système de gestion manufacturière intelligent pour le Groupe FMI, incluant soumissions IA, suivi de production et ordonnancement dynamique.",
+  "requestFramePermissions": ["microphone"]
 }

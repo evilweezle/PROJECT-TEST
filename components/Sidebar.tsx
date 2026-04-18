@@ -1,7 +1,8 @@
 import React from 'react';
-import { CubeIcon, ClipboardListIcon, UserGroupIcon, CogIcon, UserIcon, ShieldCheckIcon, TagIcon, LayersIcon, ExclamationCircleIcon } from './icons';
+import { motion, AnimatePresence } from 'motion/react';
+import { CubeIcon, ClipboardListIcon, UserGroupIcon, CogIcon, UserIcon, ShieldCheckIcon, TagIcon, LayersIcon, ExclamationCircleIcon, FileSpreadsheetIcon, XIcon, ChartBarIcon, CalendarIcon, ClockIcon, MailIcon, SparklesIcon } from './icons';
 
-type View = 'work-orders' | 'parts' | 'clients' | 'operations' | 'employees' | 'teams' | 'skills' | 'materials' | 'non-conformities';
+type View = 'shopfloor' | 'schedule' | 'mindmap' | 'work-orders' | 'quotes' | 'timesheets' | 'parts' | 'assemblies' | 'clients' | 'operations' | 'employees' | 'teams' | 'skills' | 'materials' | 'non-conformities' | 'import' | 'settings' | 'subcontractings' | 'delivery-notes' | 'invoices' | 'purchases' | 'suppliers' | 'inbox' | 'showcase';
 
 interface SidebarProps {
   currentView: View;
@@ -11,9 +12,24 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, setIsOpen }) => {
+  const dashboardItems = [
+    { id: 'shopfloor', label: 'Shopfloor Dashboard', icon: ChartBarIcon },
+    { id: 'schedule', label: 'Employee Schedule', icon: CalendarIcon },
+    { id: 'mindmap', label: 'Data Mindmap', icon: LayersIcon },
+  ];
+
   const navItems = [
     { id: 'work-orders', label: 'Work Orders', icon: ClipboardListIcon },
+    { id: 'quotes', label: 'Soumissions', icon: ClipboardListIcon },
+    { id: 'inbox', label: 'AI Inbound', icon: MailIcon },
+    { id: 'timesheets', label: 'Feuilles de temps', icon: ClockIcon },
     { id: 'parts', label: 'Parts', icon: CubeIcon },
+    { id: 'assemblies', label: 'Assemblages', icon: LayersIcon },
+    { id: 'subcontractings', label: 'Sous-traitance', icon: LayersIcon },
+    { id: 'delivery-notes', label: 'Bons de livraison', icon: ClipboardListIcon },
+    { id: 'invoices', label: 'Factures', icon: ClipboardListIcon },
+    { id: 'purchases', label: 'Achats', icon: ClipboardListIcon },
+    { id: 'suppliers', label: 'Fournisseurs', icon: UserGroupIcon },
     { id: 'clients', label: 'Clients', icon: UserGroupIcon },
     { id: 'operations', label: 'Operations', icon: CogIcon },
   ];
@@ -32,95 +48,173 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, i
     { id: 'skills', label: 'Skills', icon: TagIcon },
   ];
 
+  const toolItems = [
+    { id: 'import', label: 'Import Data', icon: FileSpreadsheetIcon },
+    { id: 'showcase', label: 'Showcase IA', icon: SparklesIcon },
+    { id: 'settings', label: 'Settings', icon: CogIcon },
+  ];
+
   const handleNavClick = (view: View) => {
     setCurrentView(view);
-    setIsOpen(false);
+    if (window.innerWidth < 768) {
+      setIsOpen(false);
+    }
   };
 
   return (
     <>
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:static md:translate-x-0 md:flex-shrink-0`}>
-        <div className="h-16 flex items-center px-6 border-b border-slate-200 flex-shrink-0">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <ShieldCheckIcon className="w-5 h-5 text-white" />
-          </div>
-          <h1 className="text-xl font-bold ml-3 text-slate-800">Hub Lists</h1>
-        </div>
-        <nav className="flex-1 px-4 py-4 overflow-y-auto">
-          <p className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Planning</p>
-          <ul>
-            {navItems.map(item => (
-              <li key={item.id}>
-                <button
-                  onClick={() => handleNavClick(item.id as View)}
-                  className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
-                    currentView === item.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
-                  {item.label}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Mobile Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 md:hidden"
+            />
+            
+            <motion.aside
+              initial={{ x: -256 }}
+              animate={{ x: 0 }}
+              exit={{ x: -256 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 flex flex-col shadow-xl md:shadow-none md:relative"
+            >
+              <div className="h-16 flex items-center px-6 border-b border-slate-200 flex-shrink-0 justify-between">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-fmi-red rounded-lg flex items-center justify-center shadow-lg shadow-red-200">
+                    <ShieldCheckIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="ml-3 flex flex-col leading-none">
+                    <span className="text-xs font-black text-fmi-red tracking-tighter">GROUPE</span>
+                    <span className="text-xl font-black text-slate-900 tracking-tighter">FMI</span>
+                  </div>
+                </div>
+                <button onClick={() => setIsOpen(false)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                  <XIcon className="w-5 h-5" />
                 </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Resources</p>
-          <ul>
-            {resourceItems.map(item => (
-              <li key={item.id}>
-                <button
-                  onClick={() => handleNavClick(item.id as View)}
-                  className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
-                    currentView === item.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Quality</p>
-          <ul>
-            {qualityItems.map(item => (
-              <li key={item.id}>
-                <button
-                  onClick={() => handleNavClick(item.id as View)}
-                  className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
-                    currentView === item.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Organization</p>
-          <ul>
-            {orgItems.map(item => (
-              <li key={item.id}>
-                <button
-                  onClick={() => handleNavClick(item.id as View)}
-                  className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
-                    currentView === item.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </aside>
+              </div>
+              <nav className="flex-1 px-4 py-4 overflow-y-auto custom-scrollbar">
+                <p className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Dashboard</p>
+                <ul className="space-y-1">
+                  {dashboardItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Planning</p>
+                <ul className="space-y-1">
+                  {navItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Resources</p>
+                <ul className="space-y-1">
+                  {resourceItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Quality</p>
+                <ul className="space-y-1">
+                  {qualityItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Organization</p>
+                <ul className="space-y-1">
+                  {orgItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Tools</p>
+                <ul className="space-y-1">
+                  {toolItems.map(item => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => handleNavClick(item.id as View)}
+                        className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
+                          currentView === item.id
+                            ? 'bg-fmi-red text-white shadow-md shadow-red-200'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <item.icon className={`w-5 h-5 mr-3 ${currentView === item.id ? 'text-white' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-6 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Contact</p>
+                <div className="px-4 py-2 text-[10px] text-slate-500 leading-relaxed font-mono">
+                  8640, avenue Émilien-Letarte<br/>
+                  St-Hyacinthe (Québec) J2R 0A3
+                </div>
+              </nav>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </>
   );
 };

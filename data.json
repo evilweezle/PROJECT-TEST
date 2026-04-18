@@ -1,0 +1,1438 @@
+{
+  "clients": [
+    {
+      "id": "c1",
+      "name": "Aérospatiale Québec"
+    },
+    {
+      "id": "c2",
+      "name": "Transport Global Inc."
+    },
+    {
+      "id": "c3",
+      "name": "Énergie Nord"
+    },
+    {
+      "id": "c4",
+      "name": "Construction Pro"
+    },
+    {
+      "id": "c5",
+      "name": "Solutions Médicales"
+    }
+  ],
+  "operations": [
+    {
+      "id": "op1",
+      "name": "Découpe Laser",
+      "rate": 150
+    },
+    {
+      "id": "op2",
+      "name": "Pliage",
+      "rate": 100
+    },
+    {
+      "id": "op3",
+      "name": "Soudage",
+      "rate": 120
+    },
+    {
+      "id": "op4",
+      "name": "Peinture",
+      "rate": 80
+    },
+    {
+      "id": "op5",
+      "name": "Assemblage Final",
+      "rate": 90
+    }
+  ],
+  "parts": [
+    {
+      "id": "p1",
+      "name": "Support Moteur A1",
+      "materialId": "m1",
+      "operations": [
+        {
+          "operationId": "op1",
+          "estimatedTimeMinutes": 20,
+          "dependencies": [],
+          "delayDays": 0
+        },
+        {
+          "operationId": "op2",
+          "estimatedTimeMinutes": 15,
+          "dependencies": [
+            "op1"
+          ],
+          "delayDays": 0
+        },
+        {
+          "operationId": "op3",
+          "estimatedTimeMinutes": 45,
+          "dependencies": [
+            "op2"
+          ],
+          "delayDays": 0
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Panneau Latéral B2",
+      "materialId": "m2",
+      "operations": [
+        {
+          "operationId": "op1",
+          "estimatedTimeMinutes": 30,
+          "dependencies": [],
+          "delayDays": 0
+        },
+        {
+          "operationId": "op4",
+          "estimatedTimeMinutes": 40,
+          "dependencies": [
+            "op1"
+          ],
+          "delayDays": 1
+        }
+      ]
+    },
+    {
+      "id": "p3",
+      "name": "Châssis Principal",
+      "materialId": "m1",
+      "operations": [
+        {
+          "operationId": "op1",
+          "estimatedTimeMinutes": 60,
+          "dependencies": [],
+          "delayDays": 0
+        },
+        {
+          "operationId": "op3",
+          "estimatedTimeMinutes": 120,
+          "dependencies": [
+            "op1"
+          ],
+          "delayDays": 0
+        },
+        {
+          "operationId": "op5",
+          "estimatedTimeMinutes": 60,
+          "dependencies": [
+            "op3"
+          ],
+          "delayDays": 0
+        }
+      ]
+    }
+  ],
+  "assemblies": [
+    {
+      "id": "a1",
+      "name": "Module de Propulsion",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 2
+        },
+        {
+          "type": "part",
+          "id": "p3",
+          "quantity": 1
+        }
+      ],
+      "operations": [
+        {
+          "operationId": "op5",
+          "estimatedTimeMinutes": 180,
+          "dependencies": [],
+          "delayDays": 0
+        }
+      ]
+    }
+  ],
+  "workOrders": [
+    {
+      "id": "wo-2001",
+      "workOrderNumber": "WO-140426-01",
+      "name": "WO-140426-01 (Urgent)",
+      "clientId": "c1",
+      "parts": [
+        {
+          "id": "p1",
+          "name": "Support Moteur A1",
+          "instanceId": "inst-2001-1",
+          "status": "In Progress",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 20,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op2",
+              "estimatedTimeMinutes": 15,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op3",
+              "estimatedTimeMinutes": 45,
+              "dependencies": [
+                "op2"
+              ],
+              "delayDays": 0
+            }
+          ]
+        }
+      ],
+      "startDate": "2026-04-14",
+      "finishDate": "2026-04-16",
+      "status": "In Progress",
+      "deliveryNoteNumber": "BDL-140426-001",
+      "invoiceNumber": "INV-140426-001"
+    },
+    {
+      "id": "wo-2002",
+      "workOrderNumber": "WO-140426-02",
+      "name": "WO-140426-02 (Stock)",
+      "clientId": "c2",
+      "parts": [
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 1
+            }
+          ],
+          "instanceId": "inst-2002-1",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "mymffuh0w",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "hyk5uabup",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "8r8yj4mm2",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "hl0rux9ep",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "ndnj6py8n",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "zxeayn10h",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "i8yfv0bh8",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "0g7tlve6i",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "u16lxr7yb",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "uf7wdp64p",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "foni59o5g",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "b9i3sii23",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "wn60slu4k",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "71820ez4n",
+          "partDependencies": [],
+          "status": "Pending"
+        },
+        {
+          "id": "p2",
+          "name": "Panneau Latéral B2",
+          "materialId": "m2",
+          "operations": [
+            {
+              "operationId": "op1",
+              "estimatedTimeMinutes": 30,
+              "dependencies": [],
+              "delayDays": 0
+            },
+            {
+              "operationId": "op4",
+              "estimatedTimeMinutes": 40,
+              "dependencies": [
+                "op1"
+              ],
+              "delayDays": 0
+            }
+          ],
+          "instanceId": "ll9x6fimx",
+          "partDependencies": [],
+          "status": "Pending"
+        }
+      ],
+      "startDate": "2026-04-15",
+      "finishDate": "2026-04-16",
+      "status": "Pending",
+      "items": [
+        {
+          "type": "part",
+          "id": "p2",
+          "quantity": 16,
+          "tempId": "inst-2002-1",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": "wo-2004",
+      "workOrderNumber": "WO-140426-03",
+      "name": "WO-140426-03 (Assemblage)",
+      "clientId": "c4",
+      "assemblyId": "a1",
+      "startDate": "2026-04-16",
+      "finishDate": "2026-04-25",
+      "status": "Pending",
+      "parts": []
+    }
+  ],
+  "employees": [
+    {
+      "id": "e1",
+      "name": "Jean Tremblay",
+      "role": "Chef d'équipe",
+      "skills": [
+        {
+          "skillId": "s3",
+          "certified": true
+        },
+        {
+          "skillId": "s5",
+          "certified": true
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "name": "Marie Côté",
+      "role": "Technicienne Laser",
+      "skills": [
+        {
+          "skillId": "s1",
+          "certified": true
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "name": "Luc Gagnon",
+      "role": "Opérateur Presse",
+      "skills": [
+        {
+          "skillId": "s2",
+          "certified": true
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "name": "Sophie Roy",
+      "role": "Peintre",
+      "skills": [
+        {
+          "skillId": "s4",
+          "certified": true
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "name": "Marc Leblanc",
+      "role": "Journalier",
+      "skills": [
+        {
+          "skillId": "s5",
+          "certified": true
+        }
+      ]
+    }
+  ],
+  "teams": [],
+  "assignments": [
+    {
+      "id": "as-1",
+      "assignmentNumber": "WO-140426-01-DECOUPELASER-01",
+      "workOrderId": "wo-2001",
+      "partInstanceId": "inst-2001-1",
+      "operationId": "op1",
+      "employeeIds": [
+        "e2"
+      ],
+      "scheduledDate": "2026-04-14",
+      "status": "Completed",
+      "isLocked": true
+    },
+    {
+      "id": "as-2",
+      "assignmentNumber": "WO-140426-01-PLIAGE-01",
+      "workOrderId": "wo-2001",
+      "partInstanceId": "inst-2001-1",
+      "operationId": "op2",
+      "employeeIds": [
+        "e3"
+      ],
+      "scheduledDate": "2026-04-14",
+      "status": "In Progress",
+      "isLocked": false
+    },
+    {
+      "id": "as-3",
+      "assignmentNumber": "WO-140426-02-DECOUPELASER-01",
+      "workOrderId": "wo-2002",
+      "partInstanceId": "inst-2002-1",
+      "operationId": "op1",
+      "employeeIds": [
+        "e2"
+      ],
+      "scheduledDate": "2026-04-16",
+      "status": "Pending",
+      "isLocked": true
+    },
+    {
+      "id": "as-4",
+      "assignmentNumber": "WO-140426-01-SOUDAGE-01",
+      "workOrderId": "wo-2001",
+      "partInstanceId": "inst-2001-1",
+      "operationId": "op3",
+      "employeeIds": [
+        "e1"
+      ],
+      "scheduledDate": "2026-04-15",
+      "status": "Pending",
+      "isLocked": false
+    },
+    {
+      "id": "as-5",
+      "assignmentNumber": "WO-140426-02-PEINTURE-01",
+      "workOrderId": "wo-2002",
+      "partInstanceId": "inst-2002-1",
+      "operationId": "op4",
+      "employeeIds": [
+        "e4"
+      ],
+      "scheduledDate": "2026-04-15",
+      "status": "Pending",
+      "isLocked": false
+    }
+  ],
+  "skills": [
+    {
+      "id": "s1",
+      "name": "Opérateur Laser"
+    },
+    {
+      "id": "s2",
+      "name": "Opérateur Presse-Plieuse"
+    },
+    {
+      "id": "s3",
+      "name": "Soudeur Certifié"
+    },
+    {
+      "id": "s4",
+      "name": "Peintre Industriel"
+    },
+    {
+      "id": "s5",
+      "name": "Assembleur Mécanique"
+    }
+  ],
+  "materials": [
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 10.2,
+      "costPerLb": 0.8,
+      "costPerSqFt": 8.16,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 120,
+      "laserAdvance12kW": 240,
+      "description": "Acier Ga.(0.250\")",
+      "type": "Plate",
+      "materialType": "Acier",
+      "thickness": 0.25,
+      "densityLbs": 0.284,
+      "id": "m_xpli76hz6"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 7.657,
+      "costPerLb": 0.7,
+      "costPerSqFt": 5.32,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 386,
+      "laserAdvance12kW": 772,
+      "description": "HRS Ga.(0.1875\")",
+      "type": "Plate",
+      "materialType": "HRS",
+      "thickness": 0.1875,
+      "densityLbs": 0.284,
+      "id": "m_eefbzy8g7"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.63,
+      "costPerLb": 0.6,
+      "costPerSqFt": 3.38,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 800,
+      "laserAdvance12kW": 1600,
+      "description": "HRS Ga.(0.135\") (10 Ga)",
+      "type": "Plate",
+      "materialType": "HRS",
+      "thickness": 0.135,
+      "densityLbs": 0.284,
+      "id": "m_kfp9ey66r"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.16,
+      "costPerLb": 0.6,
+      "costPerSqFt": 3.1,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 669,
+      "laserAdvance12kW": 1338,
+      "description": "HRS Ga.(0.120\") (11 Ga)",
+      "type": "Plate",
+      "materialType": "HRS",
+      "thickness": 0.12,
+      "densityLbs": 0.284,
+      "id": "m_od8hcmpwa"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.63,
+      "costPerLb": 0.74,
+      "costPerSqFt": 4.16,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 800,
+      "laserAdvance12kW": 1600,
+      "description": "CRS Ga.(0.135\") (10 Ga)",
+      "type": "Plate",
+      "materialType": "CRS",
+      "thickness": 0.135,
+      "densityLbs": 0.284,
+      "id": "m_991cib50e"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.16,
+      "costPerLb": 0.74,
+      "costPerSqFt": 3.82,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 669,
+      "laserAdvance12kW": 1338,
+      "description": "CRS Ga.(0.120\") (11 Ga)",
+      "type": "Plate",
+      "materialType": "CRS",
+      "thickness": 0.12,
+      "densityLbs": 0.284,
+      "id": "m_basxl0wp0"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.81,
+      "costPerLb": 1.15,
+      "costPerSqFt": 6.68,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 800,
+      "laserAdvance12kW": 1600,
+      "description": "GALV Ga.(0.135\") (10 Ga)",
+      "type": "Plate",
+      "materialType": "GALV",
+      "thickness": 0.135,
+      "densityLbs": 0.284,
+      "id": "m_l2ct0hhz9"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.81,
+      "costPerLb": 0.77,
+      "costPerSqFt": 4.47,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 800,
+      "laserAdvance12kW": 1600,
+      "description": "SATIN Ga.(0.135\") (10 Ga)",
+      "type": "Plate",
+      "materialType": "SATIN",
+      "thickness": 0.135,
+      "densityLbs": 0.284,
+      "id": "m_qww0y6lfl"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 1.76,
+      "costPerLb": 2.5,
+      "costPerSqFt": 4.4,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 400,
+      "laserAdvance12kW": 800,
+      "description": "Aluminium Ga.(0.125\")",
+      "type": "Sheet",
+      "materialType": "Aluminium",
+      "thickness": 0.125,
+      "densityLbs": 0.098,
+      "id": "m_n8z7y3z3b"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 3.52,
+      "costPerLb": 2.07,
+      "costPerSqFt": 7.29,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 182,
+      "laserAdvance12kW": 364,
+      "description": "ALU 3003-H14 Ga.(0.250\")",
+      "type": "Plate",
+      "materialType": "ALU 3003",
+      "thickness": 0.25,
+      "densityLbs": 0.098,
+      "id": "m_dc6d53xsm"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 1.44,
+      "costPerLb": 2.07,
+      "costPerSqFt": 2.98,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 267,
+      "laserAdvance12kW": 534,
+      "description": "ALU 3003-H14 Ga.(0.100\") (10 Ga)",
+      "type": "Plate",
+      "materialType": "ALU 3003",
+      "thickness": 0.1,
+      "densityLbs": 0.098,
+      "id": "m_cq48kizqp"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.73,
+      "costPerLb": 2.18,
+      "costPerSqFt": 12.49,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 500,
+      "laserAdvance12kW": 1000,
+      "description": "SS304 Ga.(0.141\") (10 Ga) #4",
+      "type": "Plate",
+      "materialType": "SS304",
+      "thickness": 0.141,
+      "densityLbs": 0.29,
+      "id": "m_bf4405du7"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.09,
+      "costPerLb": 2.18,
+      "costPerSqFt": 11.1,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 709,
+      "laserAdvance12kW": 1418,
+      "description": "SS304 Ga.(0.125\") (11 Ga) #4",
+      "type": "Plate",
+      "materialType": "SS304",
+      "thickness": 0.125,
+      "densityLbs": 0.29,
+      "id": "m_zsptjodup"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 0,
+      "weightPerSqFt": 5.73,
+      "costPerLb": 2.5,
+      "costPerSqFt": 14.32,
+      "costPerLinearFt": 0,
+      "laserAdvance6kW": 500,
+      "laserAdvance12kW": 1000,
+      "description": "SS316L Ga.(0.141\") (10 Ga) #4",
+      "type": "Plate",
+      "materialType": "SS316L",
+      "thickness": 0.141,
+      "densityLbs": 0.29,
+      "id": "m_efn9c6srw"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 4.25,
+      "weightPerSqFt": 0,
+      "costPerLb": 0.18,
+      "costPerSqFt": 0,
+      "costPerLinearFt": 0.75,
+      "laserAdvance6kW": 0,
+      "laserAdvance12kW": 0,
+      "description": "Flat Acier Ga.(0.500\") 2.5\" wide",
+      "type": "Flat Bar",
+      "materialType": "Acier",
+      "thickness": 0.5,
+      "densityLbs": 0.284,
+      "id": "m_tdhi0ilo5"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 1.47,
+      "weightPerSqFt": 0,
+      "costPerLb": 1.1,
+      "costPerSqFt": 0,
+      "costPerLinearFt": 1.62,
+      "laserAdvance6kW": 0,
+      "laserAdvance12kW": 0,
+      "description": "Flat Alum Ga.(0.500\") 2.5\" wide",
+      "type": "Flat Bar",
+      "materialType": "Aluminium",
+      "thickness": 0.5,
+      "densityLbs": 0.098,
+      "id": "m_g7okjev8q"
+    },
+    {
+      "profileDimensions": "",
+      "weightPerLinearFt": 3.19,
+      "weightPerSqFt": 0,
+      "costPerLb": 0.61,
+      "costPerSqFt": 0,
+      "costPerLinearFt": 1.93,
+      "laserAdvance6kW": 0,
+      "laserAdvance12kW": 0,
+      "description": "Angle Acier Ga.(0.250\") 2x2",
+      "type": "Angle",
+      "materialType": "Acier",
+      "thickness": 0.25,
+      "densityLbs": 0.284,
+      "id": "m_l247lqamr"
+    }
+  ],
+  "nonConformities": [
+    {
+      "id": "nc1",
+      "description": "Rayure profonde sur panneau",
+      "workOrderId": "wo-2001",
+      "partInstanceId": "inst-2001-1",
+      "operationId": "op1",
+      "status": "Open",
+      "severity": "Medium",
+      "dateReported": "2026-04-14"
+    }
+  ],
+  "quotes": [
+    {
+      "id": "q1",
+      "quoteNumber": "RFQ-140426-01",
+      "name": "RFQ-140426-01 - Projet Alpha",
+      "clientId": "c1",
+      "status": "Sent",
+      "date": "2026-04-10",
+      "totalAmount": 15000,
+      "items": []
+    },
+    {
+      "id": "q2",
+      "quoteNumber": "RFQ-140426-02",
+      "name": "RFQ-140426-02 - Maintenance",
+      "clientId": "c5",
+      "status": "Accepted",
+      "date": "2026-04-12",
+      "totalAmount": 2500,
+      "items": []
+    }
+  ],
+  "subcontractings": [
+    {
+      "id": "sc1",
+      "subcontractingNumber": "SC-1001",
+      "name": "Anodisation Noire",
+      "defaultCost": 250,
+      "workOrderId": "wo-2001",
+      "applyType": "distributed"
+    },
+    {
+      "id": "sc2",
+      "subcontractingNumber": "SC-1002",
+      "name": "Traitement Thermique",
+      "defaultCost": 150,
+      "workOrderId": "wo-2002",
+      "applyType": "once"
+    },
+    {
+      "name": "Galvanisation",
+      "defaultCost": 300,
+      "cost": 300,
+      "applyType": "once",
+      "targetItemIds": [
+        "inst-2001-1"
+      ],
+      "supplierLinks": [],
+      "workOrderId": "wo-2001",
+      "id": "sc3"
+    },
+    {
+      "id": "sc4",
+      "subcontractingNumber": "SC-1004",
+      "name": "Peinture Électrostatique",
+      "defaultCost": 450,
+      "applyType": "distributed"
+    },
+    {
+      "id": "sc5",
+      "subcontractingNumber": "SC-1005",
+      "name": "Usinage Précision",
+      "defaultCost": 1200,
+      "applyType": "once"
+    }
+  ],
+  "deliveryNotes": [
+    {
+      "id": "dn1",
+      "deliveryNoteNumber": "BDL-140426-001",
+      "workOrderId": "wo-2001",
+      "date": "2026-04-14",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 5
+        }
+      ],
+      "trackingNumber": "TRK123456",
+      "carrier": "FedEx"
+    },
+    {
+      "id": "dn2",
+      "deliveryNoteNumber": "BDL-140426-002",
+      "workOrderId": "wo-2001",
+      "date": "2026-04-14",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "dn3",
+      "deliveryNoteNumber": "BDL-140426-003",
+      "workOrderId": "wo-2002",
+      "date": "2026-04-15",
+      "items": [
+        {
+          "type": "part",
+          "id": "p2",
+          "quantity": 16
+        }
+      ],
+      "trackingNumber": "",
+      "carrier": "",
+      "isCustomerPickup": false
+    },
+    {
+      "id": "dn4",
+      "deliveryNoteNumber": "BDL-140426-004",
+      "workOrderId": "wo-2004",
+      "date": "2026-04-12",
+      "items": [
+        {
+          "type": "part",
+          "id": "p3",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "dn5",
+      "deliveryNoteNumber": "BDL-140426-005",
+      "workOrderId": "wo-2001",
+      "date": "2026-04-15",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 1
+        }
+      ]
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv1",
+      "invoiceNumber": "INV-140426-001",
+      "workOrderId": "wo-2004",
+      "deliveryNoteId": "dn1",
+      "date": "2026-04-11",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 5,
+          "unitPrice": 125.5
+        }
+      ],
+      "totalAmount": 627.5
+    },
+    {
+      "id": "inv2",
+      "invoiceNumber": "INV-140426-002",
+      "workOrderId": "wo-2001",
+      "date": "2026-04-14",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 2,
+          "unitPrice": 150
+        }
+      ],
+      "totalAmount": 300
+    },
+    {
+      "id": "inv3",
+      "invoiceNumber": "INV-140426-003",
+      "workOrderId": "wo-2002",
+      "date": "2026-04-15",
+      "items": [
+        {
+          "type": "part",
+          "id": "p2",
+          "quantity": 10,
+          "unitPrice": 45
+        }
+      ],
+      "totalAmount": 450
+    },
+    {
+      "id": "inv4",
+      "invoiceNumber": "INV-140426-004",
+      "workOrderId": "wo-2004",
+      "date": "2026-04-13",
+      "items": [
+        {
+          "type": "part",
+          "id": "p3",
+          "quantity": 1,
+          "unitPrice": 1200
+        }
+      ],
+      "totalAmount": 1200
+    },
+    {
+      "id": "inv5",
+      "invoiceNumber": "INV-140426-005",
+      "workOrderId": "wo-2001",
+      "date": "2026-04-15",
+      "items": [
+        {
+          "type": "part",
+          "id": "p1",
+          "quantity": 1,
+          "unitPrice": 150
+        }
+      ],
+      "totalAmount": 150
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "sup1",
+      "name": "Métaux Express",
+      "contactPerson": "Marc Lapointe",
+      "email": "ventes@metauxexpress.com"
+    },
+    {
+      "id": "sup2",
+      "name": "Quincaillerie Industrielle",
+      "contactPerson": "Lucie Roy",
+      "email": "info@quincind.ca"
+    },
+    {
+      "id": "sup3",
+      "name": "Solutions Laser Plus",
+      "contactPerson": "Paul Martin",
+      "email": "paul@laserplus.com"
+    },
+    {
+      "id": "sup4",
+      "name": "Peinture Pro-Tech",
+      "contactPerson": "Julie Gagnon",
+      "email": "julie@protech.ca"
+    },
+    {
+      "id": "sup5",
+      "name": "Usinage Précision Inc.",
+      "contactPerson": "Simon Leblanc",
+      "email": "simon@usinageprecision.com"
+    }
+  ],
+  "purchases": [
+    {
+      "id": "po1",
+      "purchaseNumber": "PO-3001",
+      "workOrderId": "wo-2001",
+      "supplierId": "sup1",
+      "items": [
+        {
+          "type": "material",
+          "id": "m1",
+          "quantity": 10,
+          "unitPrice": 85
+        }
+      ],
+      "isSent": true,
+      "sentDate": "2026-04-10",
+      "isReceived": true,
+      "receivedDate": "2026-04-12",
+      "totalAmount": 850
+    },
+    {
+      "id": "po2",
+      "purchaseNumber": "PO-3002",
+      "workOrderId": "wo-2002",
+      "supplierId": "sup2",
+      "items": [
+        {
+          "type": "other",
+          "id": "bolt-01",
+          "description": "Boulons Grade 8",
+          "quantity": 100,
+          "unitPrice": 0.5
+        }
+      ],
+      "isSent": true,
+      "sentDate": "2026-04-11",
+      "isReceived": false,
+      "totalAmount": 50
+    },
+    {
+      "id": "po3",
+      "purchaseNumber": "PO-3003",
+      "supplierId": "sup1",
+      "items": [
+        {
+          "type": "material",
+          "id": "m2",
+          "quantity": 5,
+          "unitPrice": 120
+        }
+      ],
+      "isSent": true,
+      "sentDate": "2026-04-12",
+      "isReceived": true,
+      "receivedDate": "2026-04-14",
+      "totalAmount": 600
+    },
+    {
+      "id": "po4",
+      "purchaseNumber": "PO-3004",
+      "workOrderId": "wo-2004",
+      "supplierId": "sup3",
+      "items": [
+        {
+          "type": "part",
+          "id": "p3",
+          "description": "Châssis Principal",
+          "quantity": 1,
+          "unitPrice": 850
+        }
+      ],
+      "isSent": false,
+      "isReceived": false,
+      "totalAmount": 850
+    },
+    {
+      "id": "po5",
+      "purchaseNumber": "PO-3005",
+      "supplierId": "sup5",
+      "items": [
+        {
+          "type": "other",
+          "id": "tool-01",
+          "description": "Fraise 1/2 Carbide",
+          "quantity": 2,
+          "unitPrice": 45
+        }
+      ],
+      "isSent": true,
+      "sentDate": "2026-04-14",
+      "isReceived": false,
+      "totalAmount": 90
+    }
+  ],
+  "timeEntries": [
+    {
+      "id": "te1",
+      "employeeId": "e2",
+      "workOrderId": "wo-2001",
+      "partInstanceId": "inst-2001-1",
+      "operationId": "op1",
+      "startTime": "2026-04-14T08:00:00Z",
+      "endTime": "2026-04-14T08:20:00Z",
+      "totalMinutes": 20
+    }
+  ],
+  "bendingSettings": {
+    "hourlyRate": 85,
+    "rateWithSecondOperator": 150,
+    "timePerBend": 1,
+    "timePerFlip": 0.5,
+    "setupTimePerSetup": 30,
+    "neopreneTimePerBend": 1,
+    "timePerReverse": 1,
+    "weightFactors": [
+      {
+        "min": 50,
+        "factor": 2
+      },
+      {
+        "min": 65,
+        "factor": 3
+      }
+    ]
+  },
+  "laserSettings": {
+    "machineHourlyRate": 325,
+    "setupHourlyRate": 65,
+    "electricityCostPerkW": 0.47,
+    "gasConsumption6kW": 5,
+    "gasConsumption12kW": 7,
+    "costPerPierce": 0.1,
+    "sheetChangeTimeMinutes": 10,
+    "sheetChangeHourlyRate": 65
+  }
+}
