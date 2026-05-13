@@ -3,24 +3,53 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { MicIcon, MicOffIcon, Loader2Icon, XIcon, MessageSquareIcon, SparklesIcon, CogIcon } from './icons';
 import { motion, AnimatePresence } from 'motion/react';
 
-import { Quote, Part, WorkOrder, Client, View } from '../types';
+import { Quote, Part, WorkOrder, Client, View, Assignment, Employee, Operation } from '../types';
+import { logService } from '@/services/logService';
 
 interface GeminiLiveVoiceProps {
   systemInstruction?: string;
+  temperature?: number;
+  voiceName?: string;
   quotes?: Quote[];
   parts?: Part[];
   workOrders?: WorkOrder[];
   clients?: Client[];
+  employees?: Employee[];
+  operations?: Operation[];
+  assignments?: Assignment[];
   setDetailedQuote?: (q: Quote | null) => void;
   setDetailedWorkOrder?: (wo: WorkOrder | null) => void;
   setEditingPart?: (p: Part | null) => void;
   setCurrentView?: (v: View) => void;
   updateQuote?: (quote: Quote) => void;
   onCreateBudgetaryQuote?: (data: { project_name: string; items: { name: string; quantity: number; description?: string }[]; client_name?: string }) => { status: string; message: string };
+  onCreatePart?: (part: Omit<Part, 'id'>) => Promise<{ status: string; message: string }> | { status: string; message: string };
+  onAddProductionFeedback?: (feedback: {
+    workOrderId: string;
+    employeeId: string;
+    operationId: string;
+    partInstanceId: string;
+    comment: string;
+  }) => { status: string; message: string };
 }
 
+const SIMS_MESSAGES = [
+  "Synchronisation des neurones...",
+  "Analyse des plans techniques FMI...",
+  "Optimisation des flux laser...",
+  "Interrogation de la mémoire centrale...",
+  "Vérification des tolérances critiques...",
+  "Consultation des archives logiques...",
+  "Polissage des métadonnées...",
+  "Calcul des algorithmes de performance...",
+  "Extraction des retours de production...",
+  "Initialisation des protocoles Jarviss..."
+];
+
 export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({ 
-  systemInstruction: initialSystemInstruction = "Tu t'appelles Jarviss. Salue toujours Karl par son nom. Ajoute une phrase courte avec un brind'humour pour annoncer que tu es prêt et présent. Tu es un assistant expert en fabrication industrielle pour le Groupe FMI. Tu aides les utilisateurs à traiter des demandes de soumission, à analyser les pièces et à gérer l'atelier. Tu peux maintenant créer des 'Soumissions Temps-Matériel' (Budgétaires) pour des estimations rapides (ex: demandes de sucre, édulcorant, ou matériel vague sans détails techniques). Si l'utilisateur exprime un besoin sans pièces précises, propose de créer une soumission budgétaire. Tu as accès à des outils pour afficher des soumissions (view_quote), afficher des pièces (view_part), mettre à jour des statuts, ou créer une soumission budgétaire (create_budgetary_quote). Réponds de manière concise.",
+  systemInstruction: initialSystemInstruction = "Tu t'appelles Jarviss...",
+  temperature = 0.7,
+  voiceName = "Puck",
   quotes = [],
   parts = [],
   workOrders = [],
@@ -30,20 +59,54 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
   setCurrentView,
   updateQuote,
   onCreateBudgetaryQuote,
+  onCreatePart,
+  onAddProductionFeedback,
   clients = []
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isActive, setIsActive] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [simsMessage, setSimsMessage] = useState("");
+  const [thinkingProgress, setThinkingProgress] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const isAiSpeakingRef = useRef(false);
   useEffect(() => { isAiSpeakingRef.current = isAiSpeaking; }, [isAiSpeaking]);
   const [systemInstruction, setSystemInstruction] = useState(initialSystemInstruction);
-  const [selectedVoice, setSelectedVoice] = useState("Zephyr");
+  
+  const enhancedSystemInstruction = systemInstruction + ` 
+  *** DIRECTIVES STRICTES ***: Tu AS ACCÈS AUX OUTILS (create_budgetary_quote, create_part, view_quote, view_work_order, etc.). 
+  LORSQUE L'UTILISATEUR TE DEMANDE DE CRÉER UNE PIÈCE OU UNE SOUMISSION (MÊME AVEC DES DÉTAILS VAGUES TEL QUE DU SUCRE OU DU BOIS), **TU DOIS ABSOLUMENT** APPELER LA FONCTION (TOOL CALL) CORRESPONDANTE (create_part ou create_budgetary_quote) AVEC LES INFORMATIONS FOURNIES.
+  Ne fais pas juste des blagues, **FAIS TON TRAVAIL** et invoque les fonctions pour créer des données dans le système !
+  `;
+  const [selectedVoice, setSelectedVoice] = useState(voiceName);
+  
+  useEffect(() => {
+    setSelectedVoice(voiceName);
+  }, [voiceName]);
   const [showSettings, setShowSettings] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [logMessages, setLogMessages] = useState<string[]>([]);
+  
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isThinking) {
+      setThinkingProgress(0);
+      setSimsMessage(SIMS_MESSAGES[Math.floor(Math.random() * SIMS_MESSAGES.length)]);
+      
+      interval = setInterval(() => {
+        setThinkingProgress(prev => (prev >= 100 ? 0 : prev + 2));
+        if (Math.random() > 0.8) {
+          setSimsMessage(SIMS_MESSAGES[Math.floor(Math.random() * SIMS_MESSAGES.length)]);
+        }
+      }, 100);
+    } else {
+      setThinkingProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [isThinking]);
+
   const [volumeBar, setVolumeBar] = useState<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +137,8 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
   const setDetailedWorkOrderRef = useRef(setDetailedWorkOrder);
   const setEditingPartRef = useRef(setEditingPart);
   const onCreateRef = useRef(onCreateBudgetaryQuote);
+  const onCreatePartRef = useRef(onCreatePart);
+  const onAddFeedbackRef = useRef(onAddProductionFeedback);
   const updateQuoteRef = useRef(updateQuote);
 
   useEffect(() => { quotesRef.current = quotes; }, [quotes]);
@@ -85,6 +150,8 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
   useEffect(() => { setDetailedWorkOrderRef.current = setDetailedWorkOrder; }, [setDetailedWorkOrder]);
   useEffect(() => { setEditingPartRef.current = setEditingPart; }, [setEditingPart]);
   useEffect(() => { onCreateRef.current = onCreateBudgetaryQuote; }, [onCreateBudgetaryQuote]);
+  useEffect(() => { onCreatePartRef.current = onCreatePart; }, [onCreatePart]);
+  useEffect(() => { onAddFeedbackRef.current = onAddProductionFeedback; }, [onAddProductionFeedback]);
   useEffect(() => { updateQuoteRef.current = updateQuote; }, [updateQuote]);
 
   const [debugInfo, setDebugInfo] = useState<string>('');
@@ -172,11 +239,13 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
       try {
         const session = await sessionRef.current;
         session.close();
-      } catch {
+      } catch (e) {
         console.error("Error closing session:", e);
       }
       sessionRef.current = null;
     }
+
+    window.dispatchEvent(new CustomEvent('geminiLiveStatus', { detail: { active: false } }));
 
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
@@ -225,13 +294,14 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
         config: {
+          temperature: temperature,
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } }
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction,
+          systemInstruction: enhancedSystemInstruction,
           tools: [{
             functionDeclarations: [
               {
@@ -338,11 +408,96 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
                   },
                   required: ["project_name", "items"]
                 }
+              },
+              {
+                name: "update_tm_form",
+                description: "Ajuste en temps réel le formulaire 'Temps-Matériel' (T-M) que l'utilisateur est en train d'éditer. Permet d'ajouter ou modifier la vue.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", description: "Nom du projet/article" },
+                    description: { type: "string" },
+                    add_materials: {
+                      type: "array",
+                      description: "Matières à ajouter",
+                      items: {
+                        type: "object",
+                        properties: {
+                          materialId: { type: "string", description: "L'ID de la matière correspondante de la base de données" },
+                          quantity: { type: "number" },
+                          type: { type: "string", description: "OBLIGATOIRE. Un de ces types parmi la base: plaque, sheet, tube, profile, etc." }
+                        },
+                        required: ["type"]
+                      }
+                    },
+                    add_operations: {
+                      type: "array",
+                      description: "Opérations à ajouter",
+                      items: {
+                        type: "object",
+                        properties: {
+                          operationId: { type: "string", description: "L'ID de l'opération" },
+                          estimatedTimeHours: { type: "number", description: "Temps estimé (en heures)" }
+                        },
+                        required: ["operationId", "estimatedTimeHours"]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                name: "create_part",
+                description: "Crée une nouvelle pièce dans le système.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", description: "Le nom de la pièce" },
+                    partNumber: { type: "string", description: "Le numéro ou la référence de la pièce" },
+                    description: { type: "string", description: "Description de la pièce" },
+                    category: { type: "string", enum: ["Laser", "Bending", "Welding", "Machining", "Assembly", "Other"], description: "Catégorie de la pièce" },
+                    materialId: { type: "string", description: "ID de la matière première (optionnel)" },
+                    status: { type: "string", enum: ["Draft", "Active", "Obsolete"], description: "Statut initial (généralement Active ou Draft)" }
+                  },
+                  required: ["name", "partNumber", "category"]
+                }
+              },
+              {
+                name: "add_production_feedback",
+                description: "Enregistre des commentaires de fabrication ou des réponses de l'employé sur des points critiques.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    workOrderId: { type: "string" },
+                    partInstanceId: { type: "string" },
+                    operationId: { type: "string" },
+                    employeeId: { type: "string" },
+                    comment: { type: "string", description: "Le commentaire ou la réponse de l'employé." }
+                  },
+                  required: ["workOrderId", "partInstanceId", "operationId", "employeeId", "comment"]
+                }
+              },
+              {
+                name: "list_tasks",
+                description: "Liste les tâches et rappels actuels du vendeur.",
+                parameters: {
+                  type: "object",
+                  properties: {}
+                }
+              },
+              {
+                name: "manage_task",
+                description: "Ajoute, termine ou supprime une tâche ou un rappel dans la liste du vendeur.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    action: { type: "string", enum: ["add", "remove", "complete"], description: "L'action à effectuer" },
+                    text: { type: "string", description: "Le texte descriptif de la tâche (ex: Rappeler Bob)." }
+                  },
+                  required: ["action", "text"]
+                }
               }
             ]
-          }],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {}
+          }]
         },
         callbacks: {
           onopen: () => {
@@ -356,32 +511,42 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
           onmessage: async (message) => {
             const msg = message as any; // eslint-disable-line @typescript-eslint/no-explicit-any
             
+            if (msg.serverContent?.modelTurn?.parts || msg.serverContent?.interrupted) {
+                setIsThinking(false);
+            }
+
             // Handle ALL message roles for transcription/text
             const parts = msg.serverContent?.modelTurn?.parts || msg.serverContent?.userTurn?.parts || msg.transcription?.parts;
             const role = msg.serverContent?.modelTurn ? 'model' : (msg.serverContent?.userTurn || msg.transcription ? 'user' : null);
             
             if (role && parts) {
                 parts.forEach((p: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-                  if (p.text) {
+                  if (p.text && p.text.trim()) {
                     addLog(`${role === 'user' ? 'Toi' : 'Jarviss'}: ${p.text}`);
                     setMessages(prev => {
                       const last = prev[prev.length - 1];
                       if (last && last.role === role) {
                         // Append if same role, but don't append to tool status messages
                         if (role === 'model' && last.text.startsWith("🔧")) return [...prev, { role, text: p.text }];
-                        return [...prev.slice(0, -1), { role, text: last.text + " " + p.text }];
+                        return [...prev.slice(0, -1), { role, text: (last.text + " " + p.text).trim() }];
                       }
-                      return [...prev, { role, text: p.text }];
+                      return [...prev, { role, text: p.text.trim() }];
                     });
                   }
                 });
             } else if (msg.transcription?.text) {
                 const text = msg.transcription.text;
                 addLog("Transcription: " + text);
+                logService.addLog({
+                  level: 'info',
+                  source: 'JarvissAudio',
+                  message: `Transcription: ${text}`
+                });
                 setMessages(prev => [...prev, { role: 'user', text }]);
             }
 
-             if (msg.toolCall) {
+             if (msg.toolCall && msg.toolCall.functionCalls) {
+                setIsThinking(true);
                 const callCount = msg.toolCall.functionCalls.length;
                 addLog(`🛠️ Jarviss analyse ${callCount} outil(s)...`);
                 setMessages(prev => [...prev, { role: 'model', text: "🔧 *Je consulte mes bases de données...*" }]);
@@ -392,6 +557,12 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
                   const { name, args, id } = call;
                   let result;
                   addLog(`👉 Appel outil: ${name}`);
+                  logService.addLog({
+                    level: 'info',
+                    source: 'JarvissAudio',
+                    message: `Exécution outil: ${name}`,
+                    details: { args }
+                  });
                   console.log(`Tool Call [${id}]: ${name}`, args);
  
                    if (name === "open_external_tab") {
@@ -484,12 +655,39 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
                         item.name?.toLowerCase().includes(q)
                       ).map((item: Client) => ({ id: item.id, name: item.name })) };
                     }
+                 } else if (name === "update_tm_form") {
+                    window.dispatchEvent(new CustomEvent('update_tm_form', { detail: args }));
+                    result = { status: "success", message: "Formulaire mis à jour en temps réel." };
                  } else if (name === "create_budgetary_quote") {
                     if (onCreateRef.current) {
                        result = onCreateRef.current(args);
                     } else {
                        result = { status: "error", message: "Option de création indisponible." };
                     }
+                 } else if (name === "create_part") {
+                    if (onCreatePartRef.current) {
+                       result = await onCreatePartRef.current(args as Omit<Part, 'id'>);
+                    } else {
+                       result = { status: "error", message: "Option de création indisponible." };
+                    }
+                 } else if (name === "add_production_feedback") {
+                    if (onAddFeedbackRef.current) {
+                      result = onAddFeedbackRef.current(args);
+                    } else {
+                      result = { status: "error", message: "Service de feedback indisponible." };
+                    }
+                 } else if (name === "list_tasks") {
+                    const saved = localStorage.getItem('sales_portal_tasks');
+                    result = { tasks: saved ? JSON.parse(saved) : [] };
+                 } else if (name === "manage_task") {
+                    if (args.action === 'add') {
+                      window.dispatchEvent(new CustomEvent('add_task', { detail: { text: args.text } }));
+                    } else if (args.action === 'remove') {
+                      window.dispatchEvent(new CustomEvent('remove_task', { detail: { text: args.text } }));
+                    } else if (args.action === 'complete') {
+                      window.dispatchEvent(new CustomEvent('complete_task', { detail: { text: args.text } }));
+                    }
+                    result = { status: "success", message: `Tâche '${args.text}' traitée (action: ${args.action}).` };
                  }
 
                  if (result === undefined) {
@@ -502,7 +700,8 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
                  });
                }
 
-               sessionRef.current?.then((session: any) => { addLog("🚀 Jarviss génère sa réponse...");
+               sessionRef.current?.then((session: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+                 addLog("🚀 Jarviss génère sa réponse...");
                  session.sendRealtimeInput({
                    toolResponse: {
                      functionResponses: responses
@@ -542,8 +741,20 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
           onerror: (err) => {
             console.error("Live API Error:", err);
             const errMsg = err instanceof Error ? err.message : String(err);
-            setError("Erreur API : " + errMsg);
-            addLog("Erreur: " + errMsg);
+            
+            logService.addLog({
+              level: 'error',
+              source: 'JarvissAudio',
+              message: `Live API Error: ${errMsg}`
+            });
+
+            if (errMsg.toLowerCase().includes("spending cap") || errMsg.toLowerCase().includes("budget")) {
+              setError("Désolé Karl, le plafond de dépenses mensuel de votre projet AI Studio a été atteint. Pour continuer à utiliser Jarviss Audio, vous devez augmenter ce plafond sur https://ai.studio/spend.");
+              addLog("Erreur: Plafond de dépenses atteint");
+            } else {
+              setError("Erreur API : " + errMsg);
+              addLog("Erreur: " + errMsg);
+            }
             stopSession();
           },
           onclose: () => {
@@ -569,6 +780,8 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
            sessionRef.current?.then(s => s.sendRealtimeInput({ text: "" })).catch(() => {});
         }
       }, 30000);
+
+      window.dispatchEvent(new CustomEvent('geminiLiveStatus', { detail: { active: true } }));
 
       const source = audioContextRef.current.createMediaStreamSource(streamRef.current);
       processorRef.current = audioContextRef.current.createScriptProcessor(CHUNK_SIZE, 1, 1);
@@ -623,58 +836,46 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
 
     } catch (err) {
       console.error("Failed to start Live session:", err);
-      setError(err instanceof Error ? err.message : "Erreur inconnue lors du démarrage.");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      
+      if (errMsg.toLowerCase().includes("spending cap") || errMsg.toLowerCase().includes("budget")) {
+        setError("Désolé Karl, le plafond de dépenses mensuel de votre projet AI Studio a été atteint. Vous pouvez le gérer sur https://ai.studio/spend.");
+      } else if (errMsg.toLowerCase().includes("requested device not found") || errMsg.toLowerCase().includes("not allowed") || errMsg.toLowerCase().includes("notfounderror")) {
+        setError("Impossible d'accéder au microphone. Veuillez vérifier qu'un microphone est branché et que les permissions sont accordées.");
+      } else {
+        setError(err instanceof Error ? err.message : "Erreur inconnue lors du démarrage.");
+      }
+      
       setIsConnecting(false);
       setDebugInfo("Échec");
     }
-  }, [isActive, selectedVoice, systemInstruction, playQueuedAudio, stopSession]);
+  }, [isActive, selectedVoice, enhancedSystemInstruction, playQueuedAudio, stopSession, temperature]);
 
   useEffect(() => {
     const handleOpenEvent = (e: Event) => {
       const customEvent = e as CustomEvent;
-      setIsOpen(true);
+      
+      if (customEvent.detail?.toggle && isActiveRef.current) {
+        stopSession();
+        return;
+      }
+
+      setIsOpen(!customEvent.detail?.background);
+      
       if (customEvent.detail?.instruction) {
         setSystemInstruction(customEvent.detail.instruction);
       }
-      if (customEvent.detail?.autoStart) {
+      if (customEvent.detail?.autoStart || customEvent.detail?.toggle) {
         startSession();
       }
     };
     window.addEventListener('openGeminiLive', handleOpenEvent);
     return () => window.removeEventListener('openGeminiLive', handleOpenEvent);
-  }, [startSession]);
+  }, [startSession, stopSession]);
 
   return (
     <>
-      {/* Background Lock Overlay: Hand control to Jarviss */}
-      {isActive && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[40] bg-slate-900/40 backdrop-blur-[2px] cursor-not-allowed pointer-events-auto"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            addLog("Écran verrouillé pendant la session Live");
-          }}
-        >
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white flex flex-col items-center gap-4 bg-black/60 p-8 rounded-3xl border border-white/20">
-             <div className="relative">
-                <motion.div 
-                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="absolute inset-0 bg-fmi-red rounded-full blur-xl"
-                />
-                <MicIcon className="w-12 h-12 relative z-10" />
-             </div>
-             <p className="font-bold tracking-widest text-sm uppercase">Mode Jarviss Actif</p>
-             <p className="text-xs opacity-80 text-center max-w-[200px]">L'application est pilotée par la voix. Jarviss s'occupe de l'affichage.</p>
-          </div>
-        </motion.div>
-      )}
-
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4 font-sans">
+      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-4 font-sans">
       <AnimatePresence>
         {isOpen && (
           <motion.div 
@@ -797,6 +998,31 @@ export const GeminiLiveVoice: React.FC<GeminiLiveVoiceProps> = ({
                     </div>
                   </div>
                 ))}
+
+                {isThinking && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col gap-2 p-4 bg-slate-900 rounded-2xl shadow-xl border border-slate-700"
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                       <div className="flex items-center gap-2">
+                          <Loader2Icon className="w-3 h-3 text-blue-400 animate-spin" />
+                          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{simsMessage}</span>
+                       </div>
+                       <span className="text-[10px] font-black text-slate-500">{Math.floor(thinkingProgress)}%</span>
+                    </div>
+                    <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+                       <motion.div 
+                         className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                         animate={{ width: `${thinkingProgress}%` }}
+                         transition={{ duration: 0.1 }}
+                       />
+                    </div>
+                    <p className="text-[8px] text-slate-500 italic mt-1 font-medium">Traitement intelligent de l'usine active...</p>
+                  </motion.div>
+                )}
+
                 {isAiSpeaking && (
                   <div className="flex justify-start">
                     <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-none px-4 py-2 shadow-sm">

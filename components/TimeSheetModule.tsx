@@ -301,8 +301,8 @@ export const TimeSheetModule: React.FC<TimeSheetModuleProps> = ({
                                         </div>
                                         <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                                             <div 
-                                                className={`h-full transition-all duration-500 ${progress > 100 ? 'bg-red-500' : 'bg-blue-500'}`}
-                                                style={{ width: `${progress}%` }}
+                                                className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-red-500' : progress >= 75 ? 'bg-amber-200' : 'bg-green-500'}`}
+                                                style={{ width: `${Math.min(100, progress)}%` }}
                                             />
                                         </div>
                                     </div>

@@ -18,10 +18,12 @@ import {
   CheckIcon,
   AlertCircleIcon,
   FileIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  ShieldCheckIcon
 } from './icons';
 import type { InboundRequest, Quote, Client, Part, Material, Operation } from '../types';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
+import { logService } from '@/services/logService';
 
 interface InboundQuotesManagerProps {
   inboundRequests: InboundRequest[];
@@ -55,6 +57,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
 
   // Chat/Vocal State
   const [isListening, setIsListening] = useState(false);
+  const [recognitionError, setRecognitionError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
@@ -75,6 +78,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
 
       recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('Speech recognition error:', event.error);
+        setRecognitionError(event.error);
         if (event.error === 'not-allowed') {
           alert('Accès au micro refusé. Veuillez autoriser l\'utilisation du microphone dans les paramètres de votre navigateur.');
         }
@@ -86,6 +90,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
   }, []);
 
   const toggleListening = () => {
+    setRecognitionError(null);
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
@@ -94,13 +99,13 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
     }
   };
 
-  const filteredRequests = inboundRequests.filter(r => 
+  const filteredRequests = (inboundRequests || []).filter(r => 
     r.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.from.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.body.toLowerCase().includes(searchTerm.toLowerCase())
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const selectedRequest = inboundRequests.find(r => r.id === selectedRequestId);
+  const selectedRequest = (inboundRequests || []).find(r => r.id === selectedRequestId);
 
   const handleCreateRequest = async () => {
     if (!newRequestText.trim() && newRequestFiles.length === 0) return;
@@ -192,40 +197,135 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
     alert("Soumission créée avec succès en tant que brouillon.");
   };
 
+  const cleanAndParseJson = (text: string) => {
+    try {
+      let cleaned = text.trim();
+      if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
+      } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+      }
+      if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+        throw new Error("Invalid JSON format");
+      }
+      return JSON.parse(cleaned);
+    } catch (e) {
+      console.warn("Standard parse failed, trying recovery...", e);
+      let cleaned = text.trim();
+      const lastBrace = cleaned.lastIndexOf('}');
+      const lastBracket = cleaned.lastIndexOf(']');
+      const lastIndex = Math.max(lastBrace, lastBracket);
+      if (lastIndex !== -1) {
+        cleaned = cleaned.substring(0, lastIndex + 1);
+        try {
+          return JSON.parse(cleaned);
+        } catch (innerError) {
+          console.error("Recovery failed:", innerError);
+          throw e;
+        }
+      }
+      throw e;
+    }
+  };
+
   const handleAnalyzeRequest = async (requestId: string) => {
-    const request = inboundRequests.find(r => r.id === requestId);
+    const request = (inboundRequests || []).find(r => r.id === requestId);
     if (!request) return;
 
-    onUpdateRequest(requestId, { isProcessed: false }); // Show loading state maybe?
+    onUpdateRequest(requestId, { isProcessed: false }); // Show loading state
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      
+      logService.addLog({
+        level: 'info',
+        source: 'InboundQuotes',
+        message: `Analyse AI entrante: ${request.subject}`,
+        details: { requestId: request.id }
+      });
+      
       const prompt = `Analyze this manufacturing request (Demande).
       TEXT: ${request.body}
-      FILES: ${request.attachments.map(a => a.name).join(', ')}
+      FILES: {(request.attachments || []).map(a => a.name).join(', ')}
       
       Tasks:
       1. Detect missing files. Always need a PDF. NEED DXF if you see "pliage/bending". NEED STEP if you see "usinage/machining".
       2. Detect operations mentioned.
       3. Extract items/parts with quantities.
-      
-      Format response as JSON:
-      {
-        "missingFiles": ["List of missing required formats"],
-        "detectedOperations": ["List of detected operations"],
-        "suggestedItems": [{ "name": "...", "quantity": 0 }]
-      }`;
+      Important: Be concise and avoid long text fields that could truncate the JSON response.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      let response;
+      let retries = 3;
+      let delay = 1000;
+
+      while (retries > 0) {
+        try {
+          response = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: prompt,
+            config: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  missingFiles: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  detectedOperations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  suggestedItems: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        quantity: { type: Type.NUMBER }
+                      },
+                      required: ["name", "quantity"]
+                    }
+                  }
+                },
+                required: ["missingFiles", "detectedOperations", "suggestedItems"]
+              }
+            }
+          });
+          break; // success
+        } catch (error: unknown) {
+          const errorStr = error instanceof Error ? error.message : String(error);
+          if (errorStr.includes('503') || errorStr.includes('UNAVAILABLE') || errorStr.includes('high demand')) {
+            retries--;
+            if (retries === 0) throw error;
+            console.warn(`Retry ${retries} after ${delay}ms due to 503 error.`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      if (!response || !response.text) throw new Error("No response from AI");
+      const analysis = cleanAndParseJson(response.text);
+      
+      logService.addLog({
+        level: 'success',
+        source: 'InboundQuotes',
+        message: `Analyse réussie pour ${request.subject}`,
+        details: { analysis }
       });
 
-      const analysis = JSON.parse(response.text);
       onUpdateRequest(requestId, { analysis });
     } catch (error) {
       console.error("AI Analysis Error:", error);
+      const errorStr = error instanceof Error ? error.message : String(error);
+      
+      logService.addLog({
+        level: 'error',
+        source: 'InboundQuotes',
+        message: `Erreur analyse AI: ${request.subject}`,
+        details: { error: errorStr }
+      });
+
+      if (errorStr.toLowerCase().includes("spending cap") || errorStr.toLowerCase().includes("budget")) {
+        alert("Attention Karl: Le plafond de dépenses mensuel de votre projet AI Studio a été atteint. Veuillez le gérer sur https://ai.studio/spend.");
+      }
     }
   };
 
@@ -413,12 +513,12 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
                              )}
                            </div>
                            
-                           {selectedRequest.analysis.missingFiles.length > 0 && (
+                           {(selectedRequest.analysis.missingFiles || []).length > 0 && (
                              <div className="mt-4 p-3 bg-white  rounded-xl border-2 border-orange-100 flex items-start gap-3">
                                 <AlertCircleIcon className="w-5 h-5 text-orange-500" />
                                 <div className="text-xs">
                                   <p className="font-bold text-orange-700">Documents manquants:</p>
-                                  <p className="text-slate-600">{selectedRequest.analysis.missingFiles.join(', ')}</p>
+                                  <p className="text-slate-600">{(selectedRequest.analysis.missingFiles || []).join(', ')}</p>
                                 </div>
                              </div>
                            )}
@@ -429,7 +529,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
                            <div className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100">
                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Opérations Détectées</h4>
                              <div className="flex flex-wrap gap-2">
-                               {selectedRequest.analysis.detectedOperations.map(op => (
+                               {(selectedRequest.analysis.detectedOperations || []).map(op => (
                                  <span key={op} className="px-3 py-1 bg-white rounded-lg border border-slate-200 text-xs font-bold text-slate-700 shadow-sm flex items-center gap-1">
                                    <CogIcon className="w-3 h-3 text-blue-500" />
                                    {op}
@@ -440,7 +540,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
                            <div className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100">
                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Items Identifiés</h4>
                              <div className="space-y-2">
-                               {selectedRequest.analysis.suggestedItems.map((item, idx) => (
+                               {(selectedRequest.analysis.suggestedItems || []).map((item, idx) => (
                                  <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-slate-100 shadow-sm">
                                    <span className="text-xs font-medium text-slate-700">{item.name}</span>
                                    <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">x{item.quantity}</span>
@@ -454,7 +554,7 @@ export const InboundQuotesManager: React.FC<InboundQuotesManagerProps> = ({
                         <div className="space-y-3">
                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Fichiers Joints</h4>
                            <div className="grid grid-cols-2 gap-3">
-                              {selectedRequest.attachments.map((att, idx) => (
+                              {(selectedRequest.attachments || []).map((att, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 transition-colors group shadow-sm">
                                   <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-bold text-xs">

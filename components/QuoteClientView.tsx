@@ -1,8 +1,10 @@
 import React, { useRef } from 'react';
-import { Quote, Part, Assembly, Operation, Client } from '../types';
+import { Quote, Part, Assembly, Operation, Client, Material, BendingSettings, LaserSettings, LaserTubeSettings, LaserParams, LaserTubeParams, BendingOperationParams } from '../types';
 import { DownloadIcon, LockIcon } from './icons';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { calculateLaserCost, calculateLaserTubeCost } from '../lib/laserCalculator';
+import { calculateBendingCost } from '../lib/bendingCalculator';
 
 interface QuoteClientViewProps {
   quote: Quote;
@@ -10,6 +12,10 @@ interface QuoteClientViewProps {
   parts: Part[];
   assemblies: Assembly[];
   operations: Operation[];
+  materials?: Material[];
+  laserSettings?: LaserSettings;
+  laserTubeSettings?: LaserTubeSettings;
+  bendingSettings?: BendingSettings;
   onFinalize: (pdfBase64: string) => void;
   isLocked?: boolean;
 }
@@ -20,23 +26,58 @@ export const QuoteClientView: React.FC<QuoteClientViewProps> = ({
   parts, 
   assemblies, 
   operations, 
+  materials = [],
+  laserSettings,
+  laserTubeSettings,
+  bendingSettings,
   onFinalize,
   isLocked 
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
-  const calculateNodeTotalTime = (node: { type: 'part' | 'assembly' | 'project'; id: string; quantity: number }): number => {
+  const getComputedOpTime = (op: { operationId: string; estimatedTimeMinutes?: number; laserParams?: LaserParams; laserTubeParams?: LaserTubeParams; bendingParams?: BendingOperationParams; }, quantity: number, materialId?: string) => {
+    const opDef = operations.find(o => o.id === op.operationId);
+    let time = Number(op.estimatedTimeMinutes) || 0;
+    let cutTime = time;
+    let handlingTime = 0;
+
+    if (opDef?.name.toLowerCase().includes('laser') || opDef?.name.toLowerCase().includes('découpe')) {
+        if (op.laserParams && laserSettings) {
+            const material = materials.find(m => m.id === materialId);
+            const res = calculateLaserCost(laserSettings, material, { ...op.laserParams, quantity });
+            cutTime = res.cuttingTimeMinutes + (op.laserParams.setupTimeMinutes || 0)/quantity;
+            handlingTime = (res.totalTimeMinutes - cutTime * quantity) / quantity;
+            time = res.totalTimeMinutes / quantity;
+        } else if (op.laserTubeParams && laserTubeSettings) {
+            const material = materials.find(m => m.id === materialId);
+            const res = calculateLaserTubeCost(laserTubeSettings, material, { ...op.laserTubeParams, quantity });
+            cutTime = (res.cuttingTimeMinutes + (op.laserTubeParams.setupTimeMinutes || 0)/quantity); 
+            handlingTime = (res.totalTimeMinutes - cutTime * quantity) / quantity;
+            time = res.totalTimeMinutes / quantity;
+        }
+    } else if (opDef?.name.toLowerCase().includes('pliage') || opDef?.name.toLowerCase().includes('bend')) {
+        if (op.bendingParams && bendingSettings) {
+            const res = calculateBendingCost(bendingSettings, { ...op.bendingParams, quantity });
+            time = res.totalTimeMinutes / quantity;
+            cutTime = time;
+        }
+    }
+    
+    return { time, cutTime, handlingTime };
+  };
+
+  const calculateNodeTotalTime = (node: { type: 'part' | 'assembly' | 'project' | 'tm-item'; id: string; quantity: number }): number => {
     let total = 0;
     if (node.type === 'part') {
       const part = parts.find(p => p.id === node.id);
       if (part && part.operations) {
-        total = part.operations.reduce((sum, op) => sum + (Number(op.estimatedTimeMinutes) || 0), 0);
+        total = part.operations.reduce((sum, op) => sum + getComputedOpTime(op, itemQuantity(part, node.quantity), part.materialId).time, 0);
       }
-    } else {
+    } else if (node.type === 'assembly') {
       const assembly = assemblies.find(a => a.id === node.id);
       if (assembly) {
         if (assembly.operations) {
-          total += assembly.operations.reduce((sum, op) => sum + (Number(op.estimatedTimeMinutes) || 0), 0);
+          total += assembly.operations.reduce((sum, op) => sum + getComputedOpTime(op, itemQuantity(assembly, node.quantity)).time, 0);
         }
         if (assembly.items) {
           total += assembly.items.reduce((sum, sub) => sum + calculateNodeTotalTime(sub), 0);
@@ -46,28 +87,37 @@ export const QuoteClientView: React.FC<QuoteClientViewProps> = ({
     return total;
   };
 
-  const operationTimes: Record<string, number> = {};
-  const accumulateTimes = (item: { type: 'part' | 'assembly'; id: string; quantity: number }, multiplier: number) => {
+  const itemQuantity = (item: { quantity?: number }, nodeQuantity: number) => {
+    return (item.quantity || 1) * nodeQuantity;
+  }
+
+  const operationTimes: Record<string, { cutTime: number; handlingTime: number }> = {};
+  
+  const accumulateTimes = (item: { type: string; id: string; quantity: number }, nodeMultiplier: number) => {
     if (item.type === 'part') {
       const part = parts.find(p => p.id === item.id);
       if (part && part.operations) {
         part.operations.forEach(op => {
-          const time = Number(op.estimatedTimeMinutes) || 0;
-          operationTimes[op.operationId] = (operationTimes[op.operationId] || 0) + (time * multiplier);
+          const { cutTime, handlingTime } = getComputedOpTime(op, part.quantity, part.materialId);
+          if (!operationTimes[op.operationId]) operationTimes[op.operationId] = { cutTime: 0, handlingTime: 0 };
+          operationTimes[op.operationId].cutTime += cutTime * nodeMultiplier * part.quantity;
+          operationTimes[op.operationId].handlingTime += handlingTime * nodeMultiplier * part.quantity;
         });
       }
-    } else {
+    } else if (item.type === 'assembly') {
       const assembly = assemblies.find(a => a.id === item.id);
       if (assembly) {
         if (assembly.operations) {
           assembly.operations.forEach(op => {
-            const time = Number(op.estimatedTimeMinutes) || 0;
-            operationTimes[op.operationId] = (operationTimes[op.operationId] || 0) + (time * multiplier);
+            const { cutTime, handlingTime } = getComputedOpTime(op, assembly.quantity);
+            if (!operationTimes[op.operationId]) operationTimes[op.operationId] = { cutTime: 0, handlingTime: 0 };
+            operationTimes[op.operationId].cutTime += cutTime * nodeMultiplier * assembly.quantity;
+            operationTimes[op.operationId].handlingTime += handlingTime * nodeMultiplier * assembly.quantity;
           });
         }
         if (assembly.items) {
           assembly.items.forEach(subItem => {
-            accumulateTimes(subItem, multiplier * subItem.quantity);
+            accumulateTimes(subItem, nodeMultiplier * assembly.quantity * subItem.quantity);
           });
         }
       }
@@ -176,8 +226,8 @@ export const QuoteClientView: React.FC<QuoteClientViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {quote.items.map((item, idx) => {
-                const label = item.type === 'project'
+              {(quote.items || []).map((item, idx) => {
+                const label = item.type === 'project' || item.type === 'tm-item'
                   ? (item.name || 'Temps-Matériel (Budgétaire)')
                   : (item.type === 'part' 
                     ? parts.find(p => p.id === item.id)?.name 
@@ -187,7 +237,7 @@ export const QuoteClientView: React.FC<QuoteClientViewProps> = ({
                   <tr key={idx} className="group">
                     <td className="py-4">
                       <p className="font-bold text-slate-900">{label}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">{item.type === 'project' ? 'Temps-Matériel' : item.type}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">{item.type === 'project' || item.type === 'tm-item' ? 'Temps-Matériel' : item.type}</p>
                     </td>
                     <td className="py-4 text-center font-bold text-slate-700">{item.quantity}</td>
                     <td className="py-4 text-center font-mono text-xs text-slate-500">{(nodeTime || 0).toFixed(1)} min</td>
@@ -203,13 +253,22 @@ export const QuoteClientView: React.FC<QuoteClientViewProps> = ({
           <div className="mb-12 bg-slate-50 p-6 rounded-sm border border-slate-100">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Sommaire des Opérations</h3>
             <div className="grid grid-cols-2 gap-x-12 gap-y-2">
-              {Object.entries(operationTimes).map(([opId, time]) => {
+              {Object.entries(operationTimes).map(([opId, times]) => {
                 const op = operations.find(o => o.id === opId);
+                const isHandlingSeparate = times.handlingTime > 0;
                 return (
-                  <div key={opId} className="flex justify-between items-center text-xs border-b border-slate-200 pb-1">
-                    <span className="text-slate-600 font-medium">{op?.name}</span>
-                    <span className="font-mono font-bold text-slate-900">{(time || 0).toFixed(1)} min</span>
-                  </div>
+                  <React.Fragment key={opId}>
+                     <div className="flex justify-between items-center text-xs border-b border-slate-200 pb-1">
+                       <span className="text-slate-600 font-medium">{op?.name}</span>
+                       <span className="font-mono font-bold text-slate-900">{(times.cutTime || 0).toFixed(1)} min</span>
+                     </div>
+                     {isHandlingSeparate && (
+                       <div className="flex justify-between items-center text-xs border-b border-slate-200 pb-1 pl-4">
+                         <span className="text-slate-500 italic">└ Manipulation / Changement</span>
+                         <span className="font-mono font-bold text-slate-900">{(times.handlingTime || 0).toFixed(1)} min</span>
+                       </div>
+                     )}
+                  </React.Fragment>
                 );
               })}
             </div>

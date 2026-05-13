@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Quote, Part, Assembly, Operation, Material } from '../types';
+import { Quote, Part, Assembly, Operation, Material, TMItem, BendingSettings, LaserSettings, LaserTubeSettings, LaserParams, LaserTubeParams, BendingOperationParams } from '../types';
 import { ChevronRightIcon, ChevronDownIcon, CubeIcon, LayersIcon, CogIcon } from './icons';
+import { calculateLaserCost, calculateLaserTubeCost } from '../lib/laserCalculator';
+import { calculateBendingCost } from '../lib/bendingCalculator';
 
 interface QuoteBOMViewProps {
   quote: Quote;
@@ -8,32 +10,85 @@ interface QuoteBOMViewProps {
   assemblies: Assembly[];
   operations: Operation[];
   materials: Material[];
+  tmItems?: TMItem[];
+  laserSettings?: LaserSettings;
+  laserTubeSettings?: LaserTubeSettings;
+  bendingSettings?: BendingSettings;
 }
 
 interface BOMNodeProps {
-  item: { type: 'part' | 'assembly' | 'project'; id: string; quantity: number; unitPrice?: number };
+  item: { type: 'part' | 'assembly' | 'project' | 'tm-item'; id: string; name?: string; quantity: number; unitPrice?: number };
   parts: Part[];
   assemblies: Assembly[];
   operations: Operation[];
   materials: Material[];
+  tmItems?: TMItem[];
+  laserSettings?: LaserSettings;
+  laserTubeSettings?: LaserTubeSettings;
+  bendingSettings?: BendingSettings;
   depth: number;
 }
 
-const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, materials, depth }) => {
+const getComputedOpTime = (
+    op: { operationId: string; estimatedTimeMinutes?: number; laserParams?: LaserParams; laserTubeParams?: LaserTubeParams; bendingParams?: BendingOperationParams; }, 
+    quantity: number, 
+    operations: Operation[], 
+    materials: Material[], 
+    materialId?: string, 
+    laserSettings?: LaserSettings, 
+    laserTubeSettings?: LaserTubeSettings, 
+    bendingSettings?: BendingSettings
+) => {
+    const opDef = operations.find(o => o.id === op.operationId);
+    let time = Number(op.estimatedTimeMinutes) || 0;
+    let cutTime = time;
+    let handlingTime = 0;
+
+    if (opDef?.name.toLowerCase().includes('laser') || opDef?.name.toLowerCase().includes('découpe')) {
+        if (op.laserParams && laserSettings) {
+            const material = materials.find(m => m.id === materialId);
+            const res = calculateLaserCost(laserSettings, material, { ...op.laserParams, quantity });
+            cutTime = res.cuttingTimeMinutes + (op.laserParams.setupTimeMinutes || 0)/quantity;
+            handlingTime = (res.totalTimeMinutes - cutTime * quantity) / quantity;
+            time = res.totalTimeMinutes / quantity;
+        } else if (op.laserTubeParams && laserTubeSettings) {
+            const material = materials.find(m => m.id === materialId);
+            const res = calculateLaserTubeCost(laserTubeSettings, material, { ...op.laserTubeParams, quantity });
+            cutTime = (res.cuttingTimeMinutes + (op.laserTubeParams.setupTimeMinutes || 0)/quantity); 
+            handlingTime = (res.totalTimeMinutes - cutTime * quantity) / quantity;
+            time = res.totalTimeMinutes / quantity;
+        }
+    } else if (opDef?.name.toLowerCase().includes('pliage') || opDef?.name.toLowerCase().includes('bend')) {
+        if (op.bendingParams && bendingSettings) {
+            const res = calculateBendingCost(bendingSettings, { ...op.bendingParams, quantity });
+            time = res.totalTimeMinutes / quantity;
+            cutTime = time;
+        }
+    }
+    
+    return { time, cutTime, handlingTime };
+};
+
+const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, materials, tmItems, laserSettings, laserTubeSettings, bendingSettings, depth }) => {
   const [isOpen, setIsOpen] = useState(true);
 
-  const calculateNodeTotalTime = (node: { type: 'part' | 'assembly'; id: string; quantity: number }): number => {
+  const calculateNodeTotalTime = (node: { type: 'part' | 'assembly' | 'tm-item' | 'project'; id: string; quantity: number }): number => {
     let total = 0;
-    if (node.type === 'part') {
+    if (node.type === 'tm-item' || node.type === 'project') {
+      const tm = tmItems?.find(t => t.id === node.id);
+      if (tm && tm.operations) {
+        total = tm.operations.reduce((sum, op) => sum + (Number(op.estimatedTimeHours) * 60 || 0), 0);
+      }
+    } else if (node.type === 'part') {
       const part = parts.find(p => p.id === node.id);
       if (part && part.operations) {
-        total = part.operations.reduce((sum, op) => sum + (Number(op.estimatedTimeMinutes) || 0), 0);
+        total = part.operations.reduce((sum, op) => sum + getComputedOpTime(op, (part.quantity || 1) * node.quantity, operations, materials, part.materialId, laserSettings, laserTubeSettings, bendingSettings).time, 0);
       }
     } else {
       const assembly = assemblies.find(a => a.id === node.id);
       if (assembly) {
         if (assembly.operations) {
-          total += assembly.operations.reduce((sum, op) => sum + (Number(op.estimatedTimeMinutes) || 0), 0);
+          total += assembly.operations.reduce((sum, op) => sum + getComputedOpTime(op, (assembly.quantity || 1) * node.quantity, operations, materials, undefined, laserSettings, laserTubeSettings, bendingSettings).time, 0);
         }
         if (assembly.items) {
           total += assembly.items.reduce((sum, sub) => sum + calculateNodeTotalTime(sub), 0);
@@ -43,22 +98,24 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
     return total;
   };
 
-  const nodeTotalTime = calculateNodeTotalTime(item.type === 'project' ? { ...item, type: 'part' } : item as any);
+  const nodeTotalTime = calculateNodeTotalTime(item);
 
-  if (item.type === 'project') {
+  if (item.type === 'project' || item.type === 'tm-item') {
+    const tm = tmItems?.find(t => t.id === item.id);
     return (
       <div className="flex flex-col">
         <div 
-          className="flex items-center py-2 px-3 hover:bg-amber-50 border-b border-amber-100 transition-colors"
+          className="flex items-center py-2 px-3 hover:bg-amber-50 border-b border-amber-100 transition-colors cursor-pointer"
           style={{ paddingLeft: `${depth * 1.5 + 0.75}rem` }}
+          onClick={() => setIsOpen(!isOpen)}
         >
           <div className="w-6 h-6 flex items-center justify-center mr-2 text-amber-500">
-            <LayersIcon className="w-4 h-4" />
+            {isOpen ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </div>
           <div className="flex-1 flex items-center justify-between">
             <div>
-              <span className="font-bold text-slate-900">{item.id}</span>
-              <span className="ml-2 text-[10px] text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-bold tracking-tight">Temps-Matériel (Budget)</span>
+              <span className="font-bold text-slate-900">{item.name || tm?.name || item.id}</span>
+              <span className="ml-2 text-[10px] text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-bold tracking-tight">Temps-Matériel</span>
             </div>
             <div className="text-right">
               <div className="text-sm font-semibold text-slate-700">
@@ -72,6 +129,31 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
             </div>
           </div>
         </div>
+
+        {isOpen && tm && (
+          <div className="bg-amber-50/10">
+            {(tm.materials || []).map((m, idx) => {
+              const mat = materials.find(x => x.id === m.materialId);
+              return (
+                <div key={idx} className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-amber-100/50" style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}>
+                  <CubeIcon className="w-3 h-3 mr-2 text-amber-300" />
+                  <span className="flex-1 truncate">{mat?.description || 'Matière inconnue'}</span>
+                  <span className="font-mono bg-amber-50 px-1 rounded">Qté: {m.quantity} {m.length ? `(L:${m.length}")` : ''}</span>
+                </div>
+              );
+            })}
+            {(tm.operations || []).map((op, idx) => {
+              const opDetails = operations.find(o => o.id === op.operationId);
+              return (
+                <div key={idx} className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-amber-100/50" style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}>
+                  <CogIcon className="w-3 h-3 mr-2 text-amber-300" />
+                  <span className="flex-1 uppercase font-medium">{opDetails?.name || 'Op inconnue'}</span>
+                  <span className="font-mono bg-amber-50 px-1 rounded">{(Number(op.estimatedTimeHours) * 60).toFixed(0)} min</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -117,17 +199,28 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
           <div className="bg-slate-50/30">
             {part.operations.map((op, idx) => {
               const opDetails = operations.find(o => o.id === op.operationId);
-              const time = Number(op.estimatedTimeMinutes) || 0;
+              const { cutTime, handlingTime } = getComputedOpTime(op, (part.quantity || 1) * item.quantity, operations, materials, part.materialId, laserSettings, laserTubeSettings, bendingSettings);
+              const isHandlingSeparate = handlingTime > 0;
               return (
-                <div 
-                  key={idx} 
-                  className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
-                  style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}
-                >
-                  <CogIcon className="w-3 h-3 mr-2 text-slate-300" />
-                  <span className="flex-1 uppercase font-medium tracking-tight">{opDetails?.name || 'Unknown Op'}</span>
-                  <span className="font-mono bg-slate-100 px-1 rounded">{(time || 0).toFixed(1)} min</span>
-                </div>
+                <React.Fragment key={idx}>
+                  <div 
+                    className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
+                    style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}
+                  >
+                    <CogIcon className="w-3 h-3 mr-2 text-slate-300" />
+                    <span className="flex-1 uppercase font-medium tracking-tight">{opDetails?.name || 'Unknown Op'}</span>
+                    <span className="font-mono bg-slate-100 px-1 rounded">{cutTime.toFixed(1)} min</span>
+                  </div>
+                  {isHandlingSeparate && (
+                    <div 
+                        className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
+                        style={{ paddingLeft: `${(depth + 1) * 1.5 + 2}rem` }}
+                    >
+                        <span className="flex-1 uppercase font-medium tracking-tight italic">└ Manipulation / Changement</span>
+                        <span className="font-mono bg-slate-100 px-1 rounded">{handlingTime.toFixed(1)} min</span>
+                    </div>
+                  )}
+                </React.Fragment>
               );
             })}
           </div>
@@ -179,17 +272,29 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
             <div className="bg-indigo-50/10">
               {assembly.operations.map((op, idx) => {
                 const opDetails = operations.find(o => o.id === op.operationId);
-                const time = Number(op.estimatedTimeMinutes) || 0;
+                const { cutTime, handlingTime } = getComputedOpTime(op, (assembly.quantity || 1) * item.quantity, operations, materials, undefined, laserSettings, laserTubeSettings, bendingSettings);
+                const isHandlingSeparate = handlingTime > 0;
+              
                 return (
-                  <div 
-                    key={idx} 
-                    className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
-                    style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}
-                  >
-                    <CogIcon className="w-3 h-3 mr-2 text-indigo-200" />
-                    <span className="flex-1 uppercase font-medium tracking-tight">{opDetails?.name || 'Unknown Op'}</span>
-                    <span className="font-mono bg-indigo-50 px-1 rounded">{time.toFixed(1)} min</span>
-                  </div>
+                  <React.Fragment key={idx}>
+                    <div 
+                      className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
+                      style={{ paddingLeft: `${(depth + 1) * 1.5 + 0.75}rem` }}
+                    >
+                      <CogIcon className="w-3 h-3 mr-2 text-indigo-200" />
+                      <span className="flex-1 uppercase font-medium tracking-tight">{opDetails?.name || 'Unknown Op'}</span>
+                      <span className="font-mono bg-indigo-50 px-1 rounded">{cutTime.toFixed(1)} min</span>
+                    </div>
+                    {isHandlingSeparate && (
+                        <div 
+                          className="flex items-center py-1.5 px-3 text-[10px] text-slate-500 border-b border-slate-50/50"
+                          style={{ paddingLeft: `${(depth + 1) * 1.5 + 2}rem` }}
+                        >
+                          <span className="flex-1 uppercase font-medium tracking-tight italic">└ Manipulation / Changement</span>
+                          <span className="font-mono bg-indigo-50 px-1 rounded">{handlingTime.toFixed(1)} min</span>
+                        </div>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -202,6 +307,10 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
               assemblies={assemblies} 
               operations={operations} 
               materials={materials}
+              tmItems={tmItems}
+              laserSettings={laserSettings}
+              laserTubeSettings={laserTubeSettings}
+              bendingSettings={bendingSettings}
               depth={depth + 1} 
             />
           ))}
@@ -211,16 +320,27 @@ const BOMNode: React.FC<BOMNodeProps> = ({ item, parts, assemblies, operations, 
   );
 };
 
-export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemblies, operations, materials }) => {
-  const operationTimes: Record<string, number> = {};
-
-  const accumulateTimes = (item: { type: 'part' | 'assembly'; id: string; quantity: number }, multiplier: number) => {
-    if (item.type === 'part') {
+export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemblies, operations, materials, tmItems, laserSettings, laserTubeSettings, bendingSettings }) => {
+  const operationTimes: Record<string, { cutTime: number; handlingTime: number }> = {};
+  
+  const accumulateTimes = (item: { type: 'part' | 'assembly' | 'project' | 'tm-item'; id: string; quantity: number }, nodeMultiplier: number) => {
+    if (item.type === 'tm-item' || item.type === 'project') {
+      const tm = tmItems?.find(t => t.id === item.id);
+      if (tm && tm.operations) {
+        tm.operations.forEach(op => {
+          const time = Number(op.estimatedTimeHours) * 60 || 0;
+          if (!operationTimes[op.operationId]) operationTimes[op.operationId] = { cutTime: 0, handlingTime: 0 };
+          operationTimes[op.operationId].cutTime += time * nodeMultiplier;
+        });
+      }
+    } else if (item.type === 'part') {
       const part = parts.find(p => p.id === item.id);
       if (part && part.operations) {
         part.operations.forEach(op => {
-          const time = Number(op.estimatedTimeMinutes) || 0;
-          operationTimes[op.operationId] = (operationTimes[op.operationId] || 0) + (time * multiplier);
+          const { cutTime, handlingTime } = getComputedOpTime(op, (part.quantity || 1) * item.quantity, operations, materials, part.materialId, laserSettings, laserTubeSettings, bendingSettings);
+          if (!operationTimes[op.operationId]) operationTimes[op.operationId] = { cutTime: 0, handlingTime: 0 };
+          operationTimes[op.operationId].cutTime += cutTime * nodeMultiplier * item.quantity;
+          operationTimes[op.operationId].handlingTime += handlingTime * nodeMultiplier * item.quantity;
         });
       }
     } else {
@@ -228,13 +348,15 @@ export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemb
       if (assembly) {
         if (assembly.operations) {
           assembly.operations.forEach(op => {
-            const time = Number(op.estimatedTimeMinutes) || 0;
-            operationTimes[op.operationId] = (operationTimes[op.operationId] || 0) + (time * multiplier);
+            const { cutTime, handlingTime } = getComputedOpTime(op, (assembly.quantity || 1) * item.quantity, operations, materials, undefined, laserSettings, laserTubeSettings, bendingSettings);
+            if (!operationTimes[op.operationId]) operationTimes[op.operationId] = { cutTime: 0, handlingTime: 0 };
+            operationTimes[op.operationId].cutTime += cutTime * nodeMultiplier * item.quantity;
+            operationTimes[op.operationId].handlingTime += handlingTime * nodeMultiplier * item.quantity;
           });
         }
         if (assembly.items) {
           assembly.items.forEach(subItem => {
-            accumulateTimes(subItem, multiplier * subItem.quantity);
+            accumulateTimes(subItem, nodeMultiplier * item.quantity * subItem.quantity);
           });
         }
       }
@@ -245,7 +367,7 @@ export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemb
     quote.items.forEach(item => accumulateTimes(item, item.quantity));
   }
 
-  const totalMachineTime = Object.values(operationTimes).reduce((sum, time) => sum + time, 0);
+  const totalMachineTime = Object.values(operationTimes).reduce((sum, times) => sum + times.cutTime + times.handlingTime, 0);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg overflow-hidden border border-slate-200 shadow-sm">
@@ -288,6 +410,10 @@ export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemb
                   assemblies={assemblies} 
                   operations={operations} 
                   materials={materials}
+                  tmItems={tmItems}
+                  laserSettings={laserSettings}
+                  laserTubeSettings={laserTubeSettings}
+                  bendingSettings={bendingSettings}
                   depth={0} 
                 />
               ))
@@ -304,17 +430,26 @@ export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemb
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Temps Machine (Est.)</span>
           </div>
           <div className="p-4 space-y-3">
-            {Object.entries(operationTimes).map(([opId, time]) => {
+            {Object.entries(operationTimes).map(([opId, times]) => {
               const op = operations.find(o => o.id === opId);
               if (!op) return null;
+              const isHandlingSeparate = times.handlingTime > 0;
               return (
-                <div key={opId} className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600 flex items-center">
-                    <CogIcon className="w-4 h-4 mr-2 text-slate-400" />
-                    {op.name}
-                  </span>
-                  <span className="font-mono font-medium text-slate-900">{(time || 0).toFixed(1)} min</span>
-                </div>
+                <React.Fragment key={opId}>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600 flex items-center">
+                      <CogIcon className="w-4 h-4 mr-2 text-slate-400" />
+                      {op.name}
+                    </span>
+                    <span className="font-mono font-medium text-slate-900">{(times.cutTime || 0).toFixed(1)} min</span>
+                  </div>
+                  {isHandlingSeparate && (
+                    <div className="flex justify-between items-center text-sm pl-6 border-l-2 border-slate-200 ml-1">
+                      <span className="text-slate-500 italic">Manipulation</span>
+                      <span className="font-mono font-medium text-slate-500">{(times.handlingTime || 0).toFixed(1)} min</span>
+                    </div>
+                  )}
+                </React.Fragment>
               );
             })}
             {Object.keys(operationTimes).length === 0 && (
@@ -340,3 +475,4 @@ export const QuoteBOMView: React.FC<QuoteBOMViewProps> = ({ quote, parts, assemb
     </div>
   );
 };
+

@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "Client": {
+      "title": "Client",
+      "description": "Information about a client.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "Part": {
+      "title": "Part",
+      "description": "Definition of a part.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "number" },
+        "materialId": { "type": "string" },
+        "operations": { "type": "array" }
+      }
+    },
+    "Quote": {
+      "title": "Quote",
+      "description": "A customer quotation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "quoteNumber": { "type": "string" },
+        "clientId": { "type": "string" },
+        "status": { "type": "string" },
+        "totalAmount": { "type": "number" }
+      }
+    }
+    
+  },
+  "firestore": {
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Collection of clients."
+    },
+    "/parts/{partId}": {
+      "schema": "Part",
+      "description": "Collection of parts."
+    },
+    "/quotes/{quoteId}": {
+      "schema": "Quote",
+      "description": "Collection of quotes."
+    }
+  }
+}

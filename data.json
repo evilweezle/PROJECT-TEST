@@ -620,6 +620,7 @@
       "id": "e1",
       "name": "Jean Tremblay",
       "role": "Chef d'équipe",
+      "employeeNumber": "101",
       "skills": [
         {
           "skillId": "s3",
@@ -635,6 +636,7 @@
       "id": "e2",
       "name": "Marie Côté",
       "role": "Technicienne Laser",
+      "employeeNumber": "202",
       "skills": [
         {
           "skillId": "s1",
@@ -646,6 +648,7 @@
       "id": "e3",
       "name": "Luc Gagnon",
       "role": "Opérateur Presse",
+      "employeeNumber": "303",
       "skills": [
         {
           "skillId": "s2",
@@ -657,6 +660,7 @@
       "id": "e4",
       "name": "Sophie Roy",
       "role": "Peintre",
+      "employeeNumber": "404",
       "skills": [
         {
           "skillId": "s4",
@@ -668,6 +672,7 @@
       "id": "e5",
       "name": "Marc Leblanc",
       "role": "Journalier",
+      "employeeNumber": "505",
       "skills": [
         {
           "skillId": "s5",
@@ -1406,6 +1411,7 @@
       "totalMinutes": 20
     }
   ],
+  "inboundRequests": [],
   "bendingSettings": {
     "hourlyRate": 85,
     "rateWithSecondOperator": 150,

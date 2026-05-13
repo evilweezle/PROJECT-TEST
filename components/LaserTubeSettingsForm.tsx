@@ -1,45 +1,45 @@
 import React, { useState } from 'react';
-import { LaserSettings, Operation } from '../types';
+import { LaserTubeSettings, Operation } from '../types';
 import { ChevronDownIcon, ChevronRightIcon } from './icons';
 import { motion, AnimatePresence } from 'motion/react';
 
-interface LaserSettingsFormProps {
-  settings: LaserSettings;
+interface LaserTubeSettingsFormProps {
+  settings: LaserTubeSettings;
   operations: Operation[];
-  onSave: (settings: LaserSettings) => void;
+  onSave: (settings: LaserTubeSettings) => void;
 }
 
-export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, operations, onSave }) => {
+export const LaserTubeSettingsForm: React.FC<LaserTubeSettingsFormProps> = ({ settings, operations, onSave }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'params' | 'instructions'>('params');
   const [activeTip, setActiveTip] = useState<string | null>(null);
-  
-  const laserOpRate = operations.find(o => o.name.toLowerCase().includes('laser') && !o.name.toLowerCase().includes('tube'))?.rate || settings.machineHourlyRate || 0;
 
-  const [localSettings, setLocalSettings] = useState<LaserSettings>({
-    machineHourlyRate: laserOpRate,
-    setupHourlyRate: settings.setupHourlyRate ?? 0,
-    electricityCostPerkW: settings.electricityCostPerkW ?? 0,
-    gasConsumption6kW: settings.gasConsumption6kW ?? 0,
-    gasConsumption12kW: settings.gasConsumption12kW ?? 0,
-    costPerPierce: settings.costPerPierce ?? 0,
-    sheetChangeTimeMinutes: settings.sheetChangeTimeMinutes ?? 0,
-    sheetChangeHourlyRate: settings.sheetChangeHourlyRate ?? 0,
+  const laserTubeOpRate = operations.find(o => o.name.toLowerCase().includes('laser tube'))?.rate || settings.machineHourlyRate || 0;
+
+  const [localSettings, setLocalSettings] = useState<LaserTubeSettings>({
+    machineHourlyRate: laserTubeOpRate,
+    minimumTimeMinutes: settings.minimumTimeMinutes ?? 15,
+    setupHourlyRate: settings.setupHourlyRate ?? laserTubeOpRate,
+    costPerPierce: settings.costPerPierce ?? 0.10,
+    handlingTimePerPartMinutes: settings.handlingTimePerPartMinutes ?? 1.5,
+    handlingTimePerBarMinutes: settings.handlingTimePerBarMinutes ?? 15,
+    electricityCostPerkW: settings.electricityCostPerkW ?? 0.47,
+    gasConsumptionRate: settings.gasConsumptionRate ?? 5,
   });
 
-  const handleChange = (field: keyof LaserSettings, value: number) => {
+  const handleChange = (field: keyof LaserTubeSettings, value: number) => {
     setLocalSettings(prev => ({ ...prev, [field]: value }));
   };
 
   const tips: Record<string, string> = {
-    machineHourlyRate: "Défini dans la table des opérations. Utilisé pour calculer le coût du temps de coupe effectif.",
-    setupHourlyRate: "Défini dans la table des opérations pour le setup. Utilisé pour calculer le coût de mise en course.",
-    electricityCostPerkW: "Multiplié par la puissance (kW) et le temps de coupe pour obtenir le coût en électricité.",
-    gasConsumption6kW: "Coût horaire du gaz consommé lors d'une coupe avec la machine 6kW.",
-    gasConsumption12kW: "Coût horaire du gaz consommé lors d'une coupe avec la machine 12kW.",
-    costPerPierce: "Montant ajouté pour chaque perçage défini sur la pièce.",
-    sheetChangeTimeMinutes: "Temps alloué pour le changement ou la manipulation d'une feuille complète.",
-    sheetChangeHourlyRate: "Taux horaire appliqué pendant la durée du changement de feuille."
+    machineHourlyRate: "Défini dans la table des opérations. Ce taux est appliqué au temps de coupe pour calculer le coût machine.",
+    setupHourlyRate: "Défini dans la table des opérations. Taux appliqué au temps d'installation machine.",
+    costPerPierce: "Coût ajouté pour chaque perçage défini dans les paramètres de la pièce.",
+    handlingTimePerPartMinutes: "Temps alloué pour la manipulation de chaque pièce finie découpée.",
+    minimumTimeMinutes: "Temps facturable minimum pour la préparation et la coupe, quelle que soit la quantité.",
+    handlingTimePerBarMinutes: "Temps alloué pour la manipulation de chaque longue barre à charger sur la machine.",
+    electricityCostPerkW: "Multiplié par la puissance de coupe et le temps effectif pour estimer le coût énergétique.",
+    gasConsumptionRate: "Coût horaire estimé du gaz utilisé pendant la coupe (azote, oxygène, etc.)."
   };
 
   return (
@@ -48,7 +48,7 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors text-left"
       >
-        <h3 className="text-xl font-bold text-slate-900 uppercase">MOTEUR DE CALCUL - LASER PLAQUE</h3>
+        <h3 className="text-xl font-bold text-slate-900 uppercase">MOTEUR DE CALCUL - LASER TUBE</h3>
         {isOpen ? (
           <ChevronDownIcon className="w-6 h-6 text-slate-500" />
         ) : (
@@ -86,41 +86,17 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Taux horaire machine ($/hr)</label>
-                    <input type="number" readOnly value={laserOpRate} 
+                    <input type="number" readOnly value={laserTubeOpRate} 
                            onFocus={() => setActiveTip(tips.machineHourlyRate)}
                            onBlur={() => setActiveTip(null)}
                            className="block w-full rounded-lg border-slate-300 shadow-sm bg-slate-100 text-slate-500 cursor-not-allowed" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Taux horaire setup ($/hr)</label>
-                    <input type="number" readOnly value={laserOpRate} 
+                    <input type="number" readOnly value={laserTubeOpRate} 
                            onFocus={() => setActiveTip(tips.setupHourlyRate)}
                            onBlur={() => setActiveTip(null)}
                            className="block w-full rounded-lg border-slate-300 shadow-sm bg-slate-100 text-slate-500 cursor-not-allowed" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Coût électricité ($/kW)</label>
-                    <input type="number" step="0.01" value={localSettings.electricityCostPerkW} 
-                           onChange={e => handleChange('electricityCostPerkW', parseFloat(e.target.value))} 
-                           onFocus={() => setActiveTip(tips.electricityCostPerkW)}
-                           onBlur={() => setActiveTip(null)}
-                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Consommation gaz 6kW ($/hr)</label>
-                    <input type="number" value={localSettings.gasConsumption6kW} 
-                           onChange={e => handleChange('gasConsumption6kW', parseFloat(e.target.value))} 
-                           onFocus={() => setActiveTip(tips.gasConsumption6kW)}
-                           onBlur={() => setActiveTip(null)}
-                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Consommation gaz 12kW ($/hr)</label>
-                    <input type="number" value={localSettings.gasConsumption12kW} 
-                           onChange={e => handleChange('gasConsumption12kW', parseFloat(e.target.value))} 
-                           onFocus={() => setActiveTip(tips.gasConsumption12kW)}
-                           onBlur={() => setActiveTip(null)}
-                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Coût par perçage ($)</label>
@@ -131,18 +107,42 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
                            className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Temps changement feuille (min)</label>
-                    <input type="number" value={localSettings.sheetChangeTimeMinutes} 
-                           onChange={e => handleChange('sheetChangeTimeMinutes', parseFloat(e.target.value))} 
-                           onFocus={() => setActiveTip(tips.sheetChangeTimeMinutes)}
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Temps manipulation / pièce (min)</label>
+                    <input type="number" step="0.1" value={localSettings.handlingTimePerPartMinutes} 
+                           onChange={e => handleChange('handlingTimePerPartMinutes', parseFloat(e.target.value))} 
+                           onFocus={() => setActiveTip(tips.handlingTimePerPartMinutes)}
                            onBlur={() => setActiveTip(null)}
                            className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Taux changement feuille ($/hr)</label>
-                    <input type="number" value={localSettings.sheetChangeHourlyRate} 
-                           onChange={e => handleChange('sheetChangeHourlyRate', parseFloat(e.target.value))} 
-                           onFocus={() => setActiveTip(tips.sheetChangeHourlyRate)}
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Minimum applicable (min)</label>
+                    <input type="number" value={localSettings.minimumTimeMinutes} 
+                           onChange={e => handleChange('minimumTimeMinutes', parseFloat(e.target.value))} 
+                           onFocus={() => setActiveTip(tips.minimumTimeMinutes)}
+                           onBlur={() => setActiveTip(null)}
+                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Temps de manipulation / barre (min)</label>
+                    <input type="number" value={localSettings.handlingTimePerBarMinutes} 
+                           onChange={e => handleChange('handlingTimePerBarMinutes', parseFloat(e.target.value))} 
+                           onFocus={() => setActiveTip(tips.handlingTimePerBarMinutes)}
+                           onBlur={() => setActiveTip(null)}
+                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Coût électricité ($/kW)</label>
+                    <input type="number" step="0.01" value={localSettings.electricityCostPerkW} 
+                           onChange={e => handleChange('electricityCostPerkW', parseFloat(e.target.value))} 
+                           onFocus={() => setActiveTip(tips.electricityCostPerkW)}
+                           onBlur={() => setActiveTip(null)}
+                           className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Consommation gaz ($/hr)</label>
+                    <input type="number" value={localSettings.gasConsumptionRate} 
+                           onChange={e => handleChange('gasConsumptionRate', parseFloat(e.target.value))} 
+                           onFocus={() => setActiveTip(tips.gasConsumptionRate)}
                            onBlur={() => setActiveTip(null)}
                            className="block w-full rounded-lg border-slate-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                   </div>
@@ -151,7 +151,7 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
 
               <div className="pt-6 border-t border-slate-200 flex flex-col md:flex-row gap-4 items-start md:items-center">
                 <button 
-                  onClick={() => onSave({ ...localSettings, machineHourlyRate: laserOpRate, setupHourlyRate: laserOpRate })} 
+                  onClick={() => onSave({ ...localSettings, machineHourlyRate: laserTubeOpRate, setupHourlyRate: laserTubeOpRate })} 
                   className="w-full md:w-auto px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-md hover:shadow-lg active:scale-95 whitespace-nowrap"
                 >
                   Enregistrer les paramètres
@@ -176,34 +176,34 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
             </div>
             ) : (
                 <div className="p-6 bg-slate-50 text-slate-800 text-sm">
-                    <h4 className="font-bold uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">Logique de Calcul (Laser Plaque)</h4>
+                    <h4 className="font-bold uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">Logique de Calcul (Laser Tube)</h4>
                     
                     <div className="space-y-4 font-mono text-xs">
                         <section>
                             <div className="font-bold text-slate-600 mb-1">1. Temps de Coupe (Machine)</div>
                             <div className="bg-white p-3 rounded border border-slate-200">
                                 <p>avance = powerkW == 12 ? laserAdvance12kW : laserAdvance6kW</p>
-                                <p>tempsCoupeMin = cutLengthInches / avance</p>
+                                <p>tempsCoupeMinParPiece = cutLengthInches / avance</p>
                             </div>
                         </section>
                         
                         <section>
-                            <div className="font-bold text-slate-600 mb-1">2. Temps de Changement et Setup</div>
+                            <div className="font-bold text-slate-600 mb-1">2. Temps de Manipulation</div>
                             <div className="bg-white p-3 rounded border border-slate-200">
-                                <p>tempsChangementTotal = numberOfSheets * sheetChangeTimeMinutes</p>
-                                <p>tempsTotal = tempsCoupeMin + tempsChangementTotal + setupTimeMinutes</p>
+                                <p>tempsManipBarres = numberOfBars * handlingTimePerBarMinutes</p>
+                                <p>tempsManipPieces = handlingTimePerPartMinutes</p>
+                                <p>tempsManipTotal = tempsManipBarres + tempsManipPieces</p>
                             </div>
                         </section>
 
                         <section>
                             <div className="font-bold text-slate-600 mb-1">3. Calcul des Coûts Individuels</div>
                             <div className="bg-white p-3 rounded border border-slate-200">
-                                <p>coutMachine = (tempsTotal / 60) * machineHourlyRate</p>
-                                <p>coutElectricite = (tempsCoupeMin / 60) * powerkW * electricityCostPerkW</p>
-                                <p>consoGaz = powerkW == 12 ? gasConsumption12kW : gasConsumption6kW</p>
-                                <p>coutGaz = (tempsCoupeMin / 60) * consoGaz</p>
-                                <p>coutPercage = numberOfPierces * costPerPierce</p>
-                                <p>coutChangementFeuille = (tempsChangementTotal / 60) * sheetChangeHourlyRate</p>
+                                <p>tempsTotalOpe = tempsCoupeMinParPiece + tempsManipTotal + setupTimeMinutes</p>
+                                <p>coutMachine = (tempsTotalOpe / 60) * machineHourlyRate</p>
+                                <p>coutElectricite = (tempsCoupeMinParPiece / 60) * powerkW * electricityCostPerkW</p>
+                                <p>coutGaz = (tempsCoupeMinParPiece / 60) * gasConsumptionRate</p>
+                                <p>coutPercages = numberOfPierces * costPerPierce</p>
                                 <p>coutSetup = (setupTimeMinutes / 60) * setupHourlyRate</p>
                             </div>
                         </section>
@@ -211,7 +211,7 @@ export const LaserSettingsForm: React.FC<LaserSettingsFormProps> = ({ settings, 
                         <section>
                             <div className="font-bold text-slate-600 mb-1">4. Coût Total</div>
                             <div className="bg-white p-3 rounded border border-slate-200">
-                                <p>coutTotal = coutMachine + coutElectricite + coutGaz + coutPercage + coutChangementFeuille + coutSetup</p>
+                                <p>coutTotal = coutMachine + coutElectricite + coutGaz + coutPercages + coutSetup</p>
                             </div>
                         </section>
                     </div>

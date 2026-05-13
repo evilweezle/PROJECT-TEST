@@ -1,3 +1,20 @@
+export interface UserProfile {
+  uid: string;
+  email: string;
+  roleLevel: number;
+  displayName?: string;
+  createdAt?: string;
+}
+
+export const ROLE_LEVELS = {
+  ADMIN: 500,
+  GESTIONNAIRE: 499,
+  PRODUCTION: 300,
+  VENTES_DIRECTOR: 201,
+  VENTES: 200,
+  CLIENTS: 100
+};
+
 export interface ContactInfo {
   contactPerson?: string;
   email?: string;
@@ -14,6 +31,12 @@ export interface ContactInfo {
 export interface Client extends ContactInfo {
   id: string;
   name: string;
+  tier?: 'Regular' | 'AdvantagePlus';
+  portalAccess?: boolean;
+  portalEmail?: string;
+  points?: number;
+  totalSubmissions?: number;
+  benchmarkScore?: number;
 }
 
 export interface Operation {
@@ -27,7 +50,7 @@ export interface Operation {
 export interface Material {
   id: string;
   description: string;
-  type: string;
+  type: string; // Should be material categories like sheet, bar, tube
   materialType: string;
   thickness: number;
   profileDimensions?: string;
@@ -39,6 +62,8 @@ export interface Material {
   costPerLinearFt: number;
   laserAdvance6kW?: number; // Cutting speed in inches per minute
   laserAdvance12kW?: number; // Cutting speed in inches per minute
+  stockQuantity?: number;
+  allocatedQuantity?: number;
 }
 
 export interface SupplierLink {
@@ -83,6 +108,8 @@ export interface PartOperation {
   requiredSkillId?: string; // Override the template skill if needed
   requiresHelper?: boolean;
   helperTimeMinutes?: number;
+  status?: JobStatus; // Track if the operation is pending, in progress, completed, or blocked
+  blockedReason?: string; // e.g., 'Manque de matériel'
   bendingResult?: BendingOperationResult;
   bendingParams?: {
     numberOfSetups: number;
@@ -107,16 +134,28 @@ export interface PartOperation {
     setupTimeMinutes?: number;
     materialCostSelection?: 'blank' | 'real' | 'nest';
   };
+  laserTubeParams?: {
+    cutLengthInches: number;
+    numberOfBars: number;
+    powerkW: number;
+    setupTimeMinutes?: number;
+    numberOfPierces?: number;
+  };
   laserResult?: LaserOperationResult;
+  laserTubeResult?: LaserOperationResult; // Reusing same result structure or similar
   isConfirmed?: boolean;
 }
 
 export interface Part {
   id: string;
   name: string;
+  ownerId?: string; // Client ID or 'FMI'
+  isClientDraft?: boolean;
   materialId?: string;
   dimensionX?: number;
   dimensionY?: number;
+  dimensionZ?: number;
+  weight?: number;
   operations: PartOperation[];
   quantity: number;
   filePdf?: string;
@@ -152,6 +191,8 @@ export interface AssemblyItem {
 export interface Assembly {
   id: string;
   name: string;
+  ownerId?: string; // Client ID or 'FMI'
+  isClientDraft?: boolean;
   items: AssemblyItem[];
   operations: PartOperation[];
   quantity: number;
@@ -172,6 +213,21 @@ export interface WorkOrderPart extends Part {
   partDependencies?: string[]; // List of instanceIds of other parts in the same work order
   status: JobStatus;
   parentAssemblyId?: string; // Track which assembly this part belongs to
+  productionFeedback?: ProductionFeedback[];
+}
+
+export interface ProductionFeedback {
+  id: string;
+  employeeId: string;
+  date: string;
+  comment: string;
+  operationId: string;
+  partInstanceId: string;
+  isAiFlagged?: boolean;
+  aiContextReference?: string; // Reference to drawing details or previous cases
+  materialConsumedId?: string;
+  materialConsumedQuantity?: number;
+  materialConsumedDimensions?: string; // e.g. "48x96 feuilles" ou "120 pouces"
 }
 
 export interface WorkOrderItem {
@@ -180,6 +236,8 @@ export interface WorkOrderItem {
   quantity: number;
   tempId: string;
   dependencies: string[];
+  productionFeedback?: ProductionFeedback[];
+  aiPostFabAnalysis?: string;
 }
 
 export interface WorkOrder {
@@ -211,13 +269,26 @@ export interface Employee {
   id:string;
   name: string;
   role: string;
+  employeeNumber: string; // 3-digit code
   skills?: EmployeeSkill[];
+  isManager?: boolean;
+  punchIn?: string; // ISO string
+  punchOut?: string; // ISO string
+  aiSuggestions?: string[]; // Evolutionary suggestions from Jarviss
+  photo?: string;
 }
 
 export interface Team {
   id: string;
   name: string;
   employeeIds: string[];
+}
+
+export interface TimeSegment {
+  id: string;
+  startTime: string; // ISO string
+  endTime?: string; // ISO string
+  durationMinutes?: number;
 }
 
 export interface Assignment {
@@ -233,6 +304,13 @@ export interface Assignment {
   scheduledDate?: string; // YYYY-MM-DD
   splitId?: string;
   isLocked?: boolean;
+  completionComment?: string;
+  
+  // Real-time tracking
+  timeSegments?: TimeSegment[];
+  totalActualMinutes?: number;
+  isTimerRunning?: boolean;
+  estimatedMinutes?: number; // Snapshot of estimate at time of assignment or from partOp
 }
 
 export interface Skill {
@@ -259,7 +337,7 @@ export type QuoteStatus = 'Draft' | 'In Progress' | 'Sent' | 'Accepted' | 'Rejec
 
 export interface QuoteItem {
   tempId?: string;
-  type: 'part' | 'assembly' | 'project';
+  type: 'part' | 'assembly' | 'project' | 'tm-item';
   id: string;
   name?: string; // For project/budgetary items
   quantity: number;
@@ -275,6 +353,7 @@ export interface Quote {
   clientId: string;
   status: QuoteStatus;
   date: string;
+  salesPersonId?: string;
   items: QuoteItem[];
   totalAmount: number;
   notes?: string;
@@ -286,6 +365,10 @@ export interface Quote {
   description?: string;
   revision?: number;
   clientCopyPdf?: string;
+  source?: 'staff' | 'client_portal';
+  clientDiscountApplied?: number;
+  interventionsRequired?: number;
+  qualityScore?: number;
 }
 
 export interface DeliveryNote {
@@ -360,9 +443,21 @@ export interface LaserSettings {
   sheetChangeHourlyRate: number;
 }
 
+export interface LaserTubeSettings {
+  machineHourlyRate: number;
+  setupHourlyRate: number; // Added
+  minimumTimeMinutes: number;
+  handlingTimePerBarMinutes: number;
+  handlingTimePerPartMinutes: number; // Added
+  electricityCostPerkW: number;
+  gasConsumptionRate: number; // $/hour
+  costPerPierce: number; // Added
+}
+
 export interface LaserOperationResult {
   cuttingTimeMinutes: number;
   machineCost: number;
+  setupCost?: number;
   electricityCost: number;
   gasCost: number;
   piercingCost: number;
@@ -424,10 +519,111 @@ export interface BendingSettings {
   minSetupTimeMinutes: number;
 }
 
+export interface AgentKnowledgeStep {
+  id: string;
+  name: string;
+  status: 'completed' | 'ongoing' | 'waiting';
+}
+
+export interface AgentExpertise {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+}
+
 export interface AgentConfig {
   id: string;
   name: string;
   description: string;
   systemPrompt: string;
   lastUpdated: string;
+  temperature?: number;
+  voiceName?: string;
+  sourceCodePreview?: string;
+  
+  // New Humanized Identity Props
+  aiIdentity?: string; // e.g. AI-77-100
+  level?: number;
+  xp?: number;
+  maxXp?: number;
+  precision?: number;
+  specialty?: string;
+  focus?: string;
+  knowledgePath?: AgentKnowledgeStep[];
+  expertiseMemory?: AgentExpertise[];
+  roleTitle?: string;
+}
+
+export interface OutputTemplate {
+  id: string;
+  name: string;
+  description: string;
+  html: string;
+  css: string;
+  placeholders: string[];
+}
+
+export interface ProfitSettings {
+  id?: string;
+  materialMargin: number;
+  operationMargin: number;
+  subcontractingUnder1000Margin: number;
+  subcontractingUnder5000Margin: number;
+  subcontractingOver5000Margin: number;
+}
+
+export interface TMItemMaterial {
+  id: string; // unique internal ID
+  materialId: string;
+  type?: string; 
+  thickness?: number;
+  width?: number; // for sheets/plates
+  length?: number; // for sheets/plates or tubes
+  weight?: number; // for volume/pound based
+  quantity: number; // raw quantity or multiplier
+  notes?: string;
+}
+
+export interface TMItemOperation {
+  id: string; // unique internal ID
+  operationId: string; // corresponds to Operation list
+  estimatedTimeHours: number;
+  notes?: string;
+}
+
+export interface TMItemSubcontracting {
+  id: string; // unique internal ID
+  subcontractingId: string; // from list
+  globalPrice: number;
+  notes?: string;
+}
+
+export interface TMItemPurchase {
+  id: string; // unique internal ID
+  description: string;
+  globalPrice: number;
+  supplierId: string; // Required association
+  notes?: string;
+}
+
+export interface TMItemFile {
+  id: string;
+  name: string;
+  base64: string; 
+  type?: string;
+}
+
+export interface TMItem {
+  id: string;
+  clientId?: string;
+  name: string;
+  description?: string;
+  notes?: string;
+  materials: TMItemMaterial[];
+  operations: TMItemOperation[];
+  subcontractings: TMItemSubcontracting[];
+  purchases: TMItemPurchase[];
+  files: TMItemFile[];
+  scans?: unknown[];
 }

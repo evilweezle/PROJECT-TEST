@@ -372,28 +372,49 @@ export const DataMindmap: React.FC<DataMindmapProps> = ({
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `You are a data assistant for an ERP. Given the user query and the list of available nodes in a mindmap, return a JSON array of node IDs that should be highlighted.
-        
-        User Query: "${aiQuery}"
-        
-        Available Nodes:
-        ${nodes.map(n => `${n.id}: ${n.data.textLabel}`).join('\n')}
-        
-        Rules:
-        1. If the user asks for a specific Work Order (e.g. "WO-140426-01"), include its ID and all connected IDs (RFQ, BDL, INV, etc.).
-        2. If the user asks for a client, include the client node and all their related documents.
-        3. Return ONLY a JSON array of strings.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
+      let response;
+      let retries = 3;
+      let delay = 1000;
+
+      while (retries > 0) {
+        try {
+          response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: `You are a data assistant for an ERP. Given the user query and the list of available nodes in a mindmap, return a JSON array of node IDs that should be highlighted.
+            
+            User Query: "${aiQuery}"
+            
+            Available Nodes:
+            ${nodes.map(n => `${n.id}: ${n.data.textLabel}`).join('\n')}
+            
+            Rules:
+            1. If the user asks for a specific Work Order (e.g. "WO-140426-01"), include its ID and all connected IDs (RFQ, BDL, INV, etc.).
+            2. If the user asks for a client, include the client node and all their related documents.
+            3. Return ONLY a JSON array of strings.`,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            }
+          });
+          break; // success
+        } catch (error: unknown) {
+          const errorStr = error instanceof Error ? error.message : String(error);
+          if (errorStr.includes('503') || errorStr.includes('UNAVAILABLE') || errorStr.includes('high demand')) {
+            retries--;
+            if (retries === 0) throw error;
+            console.warn(`Retry ${retries} after ${delay}ms due to 503 error.`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+          } else {
+            throw error;
           }
         }
-      });
+      }
 
+      if (!response) throw new Error("AI failed to respond");
       const ids = JSON.parse(response.text);
       setHighlightedIds(ids);
     } catch (error) {

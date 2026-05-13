@@ -1,6 +1,6 @@
-import { Part, Assembly, Operation, Material, BendingSettings, LaserSettings, Subcontracting } from '../types';
+import { Part, Assembly, Operation, Material, BendingSettings, LaserSettings, LaserTubeSettings, Subcontracting } from '../types';
 import { calculateBendingCost } from './bendingCalculator';
-import { calculateLaserCost } from './laserCalculator';
+import { calculateLaserCost, calculateLaserTubeCost } from './laserCalculator';
 
 export function calculatePartUnitCost(
   part: Part | Omit<Part, 'id'>,
@@ -8,6 +8,7 @@ export function calculatePartUnitCost(
   materials: Material[],
   bendingSettings: BendingSettings,
   laserSettings: LaserSettings,
+  laserTubeSettings: LaserTubeSettings,
   subcontractings: Subcontracting[] = []
 ): number {
   const material = materials.find(m => m.id === part.materialId);
@@ -68,12 +69,15 @@ export function calculatePartUnitCost(
     let unitPrice = 0;
     if (op.name?.toLowerCase().includes('pliage') || op.name?.toLowerCase().includes('bend')) {
       if (po.bendingParams) {
-        const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
+        const result = calculateBendingCost({ ...bendingSettings, hourlyRate: op.rate }, { ...po.bendingParams, quantity });
         unitPrice = result.unitPrice;
       }
     } else if (op.name?.toLowerCase().includes('laser') || op.name?.toLowerCase().includes('découpe') || op.name?.toLowerCase().includes('cut')) {
-      if (po.laserParams && material) {
-        const result = calculateLaserCost(laserSettings, material, { ...po.laserParams, quantity });
+      if (po.laserTubeParams) {
+        const result = calculateLaserTubeCost({ ...laserTubeSettings, machineHourlyRate: op.rate }, material, { ...po.laserTubeParams, quantity });
+        unitPrice = result.unitPrice;
+      } else if (po.laserParams && material) {
+        const result = calculateLaserCost({ ...laserSettings, machineHourlyRate: op.rate }, material, { ...po.laserParams, quantity });
         unitPrice = result.unitPrice;
       } else {
         unitPrice = (op.rate * (po.estimatedTimeMinutes / 60)) / quantity;
@@ -108,6 +112,7 @@ export function calculateAssemblyUnitCost(
   materials: Material[],
   bendingSettings: BendingSettings,
   laserSettings: LaserSettings,
+  laserTubeSettings: LaserTubeSettings,
   subcontractings: Subcontracting[] = []
 ): number {
   const quantity = assembly.quantity || 1;
@@ -118,12 +123,12 @@ export function calculateAssemblyUnitCost(
     if (item.type === 'part') {
       const part = parts.find(p => p.id === item.id);
       if (part) {
-        unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, subcontractings);
+        unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
       }
     } else {
       const subAssembly = assemblies.find(a => a.id === item.id);
       if (subAssembly) {
-        unitPrice = calculateAssemblyUnitCost(subAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+        unitPrice = calculateAssemblyUnitCost(subAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
       }
     }
     return acc + (unitPrice * item.quantity);
@@ -137,7 +142,7 @@ export function calculateAssemblyUnitCost(
     let unitPrice = 0;
     if (op.name?.toLowerCase().includes('pliage') || op.name?.toLowerCase().includes('bend')) {
       if (po.bendingParams) {
-        const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
+        const result = calculateBendingCost({ ...bendingSettings, hourlyRate: op.rate }, { ...po.bendingParams, quantity });
         unitPrice = result.unitPrice;
       }
     } else {

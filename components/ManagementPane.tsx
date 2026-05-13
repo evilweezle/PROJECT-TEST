@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { PlusIcon, TrashIcon, EditIcon, PrinterIcon } from './icons';
 import { Modal } from './Modal';
-import { Search, Filter, X } from 'lucide-react';
+import { Search, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface ManagementPaneProps<T> {
   title: string;
@@ -12,6 +12,7 @@ interface ManagementPaneProps<T> {
     render?: (item: T) => React.ReactNode;
     filterable?: boolean;
     filterOptions?: { value: unknown; label: string }[];
+    sortable?: boolean;
   }[];
   onDeleteItem: (id: string) => void;
   onEditItem?: (item: T) => void;
@@ -20,6 +21,7 @@ interface ManagementPaneProps<T> {
   modalSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
   customActions?: (item: T) => React.ReactNode;
   renderHeaderActions?: () => React.ReactNode;
+  alwaysShowFilters?: boolean;
 }
 
 export const ManagementPane = <T extends { id: string }>({
@@ -33,11 +35,13 @@ export const ManagementPane = <T extends { id: string }>({
   modalSize = 'lg',
   customActions,
   renderHeaderActions,
+  alwaysShowFilters = false,
 }: ManagementPaneProps<T>) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilters, setActiveFilters] = useState<Record<string, unknown>>({});
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(alwaysShowFilters);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof T; direction: 'asc' | 'desc' } | null>(null);
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -47,8 +51,16 @@ export const ManagementPane = <T extends { id: string }>({
     setIsModalOpen(false);
   };
 
+  const handleSort = (key: keyof T) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   const filteredItems = useMemo(() => {
-    return (items || []).filter((item) => {
+    let result = (items || []).filter((item) => {
       // Search logic
       const matchesSearch = searchTerm === '' || Object.values(item).some(val => {
         if (typeof val === 'string' || typeof val === 'number') {
@@ -65,16 +77,36 @@ export const ManagementPane = <T extends { id: string }>({
         return String(item[key as keyof T]) === String(value);
       });
     });
-  }, [items, searchTerm, activeFilters]);
+
+    // Sorting logic
+    if (sortConfig) {
+      result = [...result].sort((a, b) => {
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+
+        if (aVal === bVal) return 0;
+        
+        const directionMultiplier = sortConfig.direction === 'asc' ? 1 : -1;
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return (aVal - bVal) * directionMultiplier;
+        }
+        
+        return String(aVal).localeCompare(String(bVal)) * directionMultiplier;
+      });
+    }
+
+    return result;
+  }, [items, searchTerm, activeFilters, sortConfig]);
 
   const columnFilterOptions = useMemo(() => {
     const options: Record<string, { value: unknown; label: string }[]> = {};
-    columns.forEach(col => {
+    (columns || []).forEach(col => {
       if (col.filterable) {
         if (col.filterOptions) {
           options[String(col.key)] = col.filterOptions;
         } else {
-          const uniqueValues = Array.from(new Set(items.map(item => item[col.key])));
+          const uniqueValues = Array.from(new Set((items || []).map(item => item[col.key])));
           options[String(col.key)] = uniqueValues.map(val => ({
             value: val,
             label: String(val)
@@ -101,6 +133,14 @@ export const ManagementPane = <T extends { id: string }>({
             <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">
               {filteredItems.length} {filteredItems.length !== items.length ? `of ${items.length}` : ''} items
             </span>
+            {sortConfig && (
+              <button 
+                onClick={() => setSortConfig(null)}
+                className="text-[10px] text-slate-400 hover:text-[#0078D4] border border-slate-200 px-1.5 py-0.5 rounded uppercase"
+              >
+                Clear Sort
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-64">
@@ -141,7 +181,7 @@ export const ManagementPane = <T extends { id: string }>({
 
         {(showFilters || hasActiveFilters) && (
           <div className="flex flex-wrap items-center gap-4 pt-2">
-            {columns.filter(c => c.filterable).map(col => (
+            {(columns || []).filter(c => c.filterable).map(col => (
               <div key={String(col.key)} className="flex items-center gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase">{col.header}:</label>
                 <select
@@ -172,15 +212,30 @@ export const ManagementPane = <T extends { id: string }>({
         <table className="min-w-full border-separate border-spacing-0">
           <thead className="bg-white sticky top-0 z-10">
             <tr>
-              {(columns || []).map((col) => (
-                <th 
-                  key={String(col.key)} 
-                  scope="col" 
-                  className="px-6 py-3 text-left text-xs font-semibold text-[#605E5C] uppercase tracking-wider border-b border-[#EDEBE9] bg-white"
-                >
-                  {col.header}
-                </th>
-              ))}
+              {(columns || []).map((col) => {
+                const isSortable = col.sortable !== false;
+                const isSorted = sortConfig?.key === col.key;
+                
+                return (
+                  <th 
+                    key={String(col.key)} 
+                    scope="col" 
+                    className={`px-6 py-3 text-left text-xs font-semibold text-[#605E5C] uppercase tracking-wider border-b border-[#EDEBE9] bg-white ${isSortable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}
+                    onClick={isSortable ? () => handleSort(col.key) : undefined}
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.header}
+                      {isSortable && (
+                        <div className="text-slate-400">
+                          {!isSorted && <ArrowUpDown className="w-3 h-3 opacity-30 group-hover:opacity-100" />}
+                          {isSorted && sortConfig.direction === 'asc' && <ArrowUp className="w-3 h-3 text-[#0078D4]" />}
+                          {isSorted && sortConfig.direction === 'desc' && <ArrowDown className="w-3 h-3 text-[#0078D4]" />}
+                        </div>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
               <th scope="col" className="px-6 py-3 border-b border-[#EDEBE9] bg-white">
                 <span className="sr-only">Actions</span>
               </th>

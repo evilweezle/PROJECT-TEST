@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { calculateBendingCost } from '../lib/bendingCalculator';
-import { calculateLaserCost } from '../lib/laserCalculator';
+import { calculateLaserCost, calculateLaserTubeCost } from '../lib/laserCalculator';
 import { calculatePartUnitCost, calculateAssemblyUnitCost } from '../lib/costCalculator';
 import { extractDataFromDxf } from '../lib/dxfExtractor';
 import { DxfViewer } from 'dxf-viewer';
@@ -11,7 +11,7 @@ import { PlusIcon } from 'lucide-react';
 import { TrashIcon, XIcon, LockIcon, CheckCircleIcon } from './icons';
 import { AiQuoteChatbox } from './AiQuoteChatbox';
 import { ApprovalDashboard } from './ApprovalDashboard';
-import { Client, Operation, Part, Assembly, WorkOrder, Employee, Team, Skill, Material, NonConformity, Quote, BendingSettings, LaserSettings, Subcontracting, SubcontractingItem, AssemblyItem, PartOperation, QuoteItem, JobStatus, DeliveryNote, Invoice, Supplier, Purchase, PurchaseItem, ContactInfo, SupplierLink } from '../types';
+import { Client, Operation, Part, Assembly, WorkOrder, Employee, Team, Skill, Material, NonConformity, Quote, BendingSettings, LaserSettings, LaserTubeSettings, Subcontracting, SubcontractingItem, AssemblyItem, PartOperation, QuoteItem, JobStatus, DeliveryNote, Invoice, Supplier, Purchase, PurchaseItem, ContactInfo, SupplierLink } from '../types';
 import { UploadIcon } from './icons';
 
 const ContactFields: React.FC<{
@@ -367,6 +367,72 @@ const SubcontractingItemsList: React.FC<SubcontractingItemsListProps> = ({ items
                     </div>
                 ))}
             </div>
+        </div>
+    );
+};
+
+const SubcontractingRequirementSelector: React.FC<SubcontractingItemsListProps> = ({ items, subcontractings, onChange, applyType }) => {
+    const handleToggle = (sub: Subcontracting) => {
+        const existing = items.find(i => i.subcontractingId === sub.id);
+        if (existing) {
+            onChange(items.filter(i => i.subcontractingId !== sub.id));
+        } else {
+            onChange([...items, {
+                id: `sub-${sub.id}-${items.length}`,
+                subcontractingId: sub.id,
+                description: '', // used for instructions / color codes
+                cost: 0, // determined at quoting stage
+                applyType: applyType || 'perUnit',
+                status: 'Pending',
+                targetItemIds: []
+            }]);
+        }
+    };
+
+    const handleInstructionChange = (subId: string, instructions: string) => {
+        onChange(items.map(i => i.subcontractingId === subId ? { ...i, description: instructions } : i));
+    };
+
+    return (
+        <div className="space-y-3">
+            {subcontractings.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">Aucune sous-traitance configurée.</p>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {subcontractings.map(sub => {
+                        const existing = items.find(i => i.subcontractingId === sub.id);
+                        const isSelected = !!existing;
+
+                        return (
+                            <div key={sub.id} className={`border rounded-xl p-3 transition-colors ${isSelected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggle(sub)}
+                                        className="mt-1 flex-shrink-0 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-colors"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-slate-900 truncate" title={sub.name}>{sub.name}</div>
+                                        {isSelected && (
+                                            <div className="mt-2">
+                                                <input
+                                                    type="text"
+                                                    value={existing.description || ''}
+                                                    onChange={e => handleInstructionChange(sub.id, e.target.value)}
+                                                    onClick={e => e.stopPropagation()}
+                                                    placeholder="Instructions (ex: Code couleur...)"
+                                                    className="block w-full text-xs rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </label>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 };
@@ -741,6 +807,9 @@ interface ClientFormProps {
 
 export const ClientForm: React.FC<ClientFormProps> = ({ onSubmit, onCancel, initialData, isSubForm }) => {
   const [name, setName] = useState(initialData?.name || '');
+  const [tier, setTier] = useState<"Regular" | "AdvantagePlus">(initialData?.tier || 'Regular');
+  const [points, setPoints] = useState<number>(initialData?.points || 0);
+  const portalAccess = initialData?.portalAccess || false;
   const [contactInfo, setContactInfo] = useState<ContactInfo>({
     contactPerson: initialData?.contactPerson || '',
     email: initialData?.email || '',
@@ -765,7 +834,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onSubmit, onCancel, init
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (validate()) {
-      const data = { ...initialData, name: name.trim(), ...contactInfo };
+      const data = { ...initialData, name: name.trim(), ...contactInfo, tier, portalAccess, points };
       onSubmit(data as Client);
     }
   };
@@ -789,6 +858,29 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onSubmit, onCancel, init
           }`}
         />
         {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700">Catégorie Client</label>
+          <select 
+            value={tier}
+            onChange={e => setTier(e.target.value as "Regular" | "AdvantagePlus")}
+            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          >
+            <option value="Regular">Régulier</option>
+            <option value="AdvantagePlus">Avantage+</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700">Points Portail</label>
+          <input 
+            type="number"
+            value={points}
+            onChange={e => setPoints(parseInt(e.target.value) || 0)}
+            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
       </div>
 
       <div className="border-t border-slate-200 pt-4">
@@ -849,9 +941,9 @@ export const OperationForm: React.FC<OperationFormProps> = ({ skills, onSubmit, 
         e?.preventDefault();
         if (validate()) {
             if (initialData) {
-                onSubmit({ ...initialData, name: name.trim(), rate: Number(rate), availableIn, requiredSkillId: requiredSkillId || undefined });
+                onSubmit({ ...initialData, name: name.trim(), rate: Number(rate), availableIn, requiredSkillId: requiredSkillId || null });
             } else {
-                onSubmit({ name: name.trim(), rate: Number(rate), availableIn, requiredSkillId: requiredSkillId || undefined });
+                onSubmit({ name: name.trim(), rate: Number(rate), availableIn, requiredSkillId: requiredSkillId || null });
             }
         }
     };
@@ -903,7 +995,7 @@ export const OperationForm: React.FC<OperationFormProps> = ({ skills, onSubmit, 
                     className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
                 >
                     <option value="">No specific skill required</option>
-                    {skills.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {(skills || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
             </div>
             <div>
@@ -953,24 +1045,54 @@ export const OperationForm: React.FC<OperationFormProps> = ({ skills, onSubmit, 
 };
 
 interface PartFormProps {
+    clients?: Client[];
     operations: Operation[];
     materials: Material[];
     suppliers: Supplier[];
     subcontractings: Subcontracting[];
     bendingSettings: BendingSettings;
     laserSettings: LaserSettings;
+    laserTubeSettings: LaserTubeSettings;
     onSubmit: (part: Omit<Part, 'id'> | Part) => void;
     onCancel: () => void;
     initialData?: Part | null;
     isSubForm?: boolean;
 }
 
-export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppliers, subcontractings, bendingSettings, laserSettings, onSubmit, onCancel, initialData, isSubForm }) => {
+export const PartForm: React.FC<PartFormProps> = ({ clients, operations, materials, suppliers, subcontractings, bendingSettings, laserSettings, laserTubeSettings, onSubmit, onCancel, initialData, isSubForm }) => {
     const [name, setName] = useState(initialData?.name || '');
+    const [ownerId, setOwnerId] = useState(initialData?.ownerId || '');
     const [materialId, setMaterialId] = useState(initialData?.materialId || '');
     const [dimensionX, setDimensionX] = useState<number>(initialData?.dimensionX || 0);
     const [dimensionY, setDimensionY] = useState<number>(initialData?.dimensionY || 0);
-    const [quantity, setQuantity] = useState(initialData?.quantity || 1);
+    const [dimensionZ, setDimensionZ] = useState<number>(initialData?.dimensionZ || 0);
+    const [weight, setWeight] = useState<number>(initialData?.weight || 0);
+    const quantity = 1;
+
+    const selectedMaterial = useMemo(() => materials.find(m => m.id === materialId), [materialId, materials]);
+
+    const dimensionConfig = useMemo(() => {
+        const defaultLabels = { x: 'Dimension X (po)', y: 'Dimension Y (po)', z: 'Dimension Z (po)' };
+        if (!selectedMaterial) return { x: true, y: true, z: false, labels: defaultLabels };
+        
+        const type = selectedMaterial.type?.toLowerCase() || '';
+        const matType = selectedMaterial.materialType?.toLowerCase() || '';
+        const desc = selectedMaterial.description?.toLowerCase() || '';
+
+        // Buche: X, Y, Z
+        if (type.includes('buche') || matType.includes('buche') || desc.includes('buche')) {
+            return { x: true, y: true, z: true, labels: { x: 'Largeur (X)', y: 'Profondeur (Y)', z: 'Hauteur (Z)' } };
+        }
+        
+        // Profile/Tube/Barre: Length
+        if (type.includes('profile') || type.includes('tube') || type.includes('bar') || type.includes('poutre') || type.includes('angle') || type.includes('channel')) {
+            return { x: true, y: false, z: false, labels: { x: 'Longueur (po)' } };
+        }
+
+        // Plate/Sheet: X, Y (Default)
+        return { x: true, y: true, z: false, labels: { x: 'Largeur (X)', y: 'Longueur (Y)' } };
+    }, [selectedMaterial]);
+
     const [partOps, setPartOps] = useState<PartOperation[]>(() => 
         (initialData?.operations || []).map(po => ({ 
             ...po, 
@@ -1198,15 +1320,17 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
     const handleAddOperation = () => {
         if (!selectedOpToAdd) return;
         const op = operations.find(o => o.id === selectedOpToAdd);
-        const isBending = op?.name.toLowerCase().includes('pliage') || op?.name.toLowerCase().includes('bend');
-        const isLaser = op?.name.toLowerCase().includes('laser') || op?.name.toLowerCase().includes('découpe') || op?.name.toLowerCase().includes('cut');
+        const isBending = op?.name?.toLowerCase().includes('pliage') || op?.name?.toLowerCase().includes('bend');
+        const isLaserSheet = (op?.name?.toLowerCase().includes('laser') || op?.name?.toLowerCase().includes('découpe') || op?.name?.toLowerCase().includes('cut')) && !op?.name?.toLowerCase().includes('tube');
+        const isLaserTube = (op?.name?.toLowerCase().includes('laser') || op?.name?.toLowerCase().includes('découpe') || op?.name?.toLowerCase().includes('cut')) && op?.name?.toLowerCase().includes('tube');
+        
         setPartOps(prev => [...prev, { 
             id: Date.now().toString() + Math.random().toString(),
             operationId: selectedOpToAdd, 
             estimatedTimeMinutes: 60, 
             dependencies: [], 
             delayDays: 0,
-            isConfirmed: !isBending && !isLaser,
+            isConfirmed: !isBending && !isLaserSheet && !isLaserTube,
             bendingParams: isBending ? {
                 numberOfSetups: 1,
                 numberOfBends: 1,
@@ -1216,11 +1340,17 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                 quantity: quantity,
                 numberOfReverses: 0
             } : undefined,
-            laserParams: isLaser ? {
+            laserParams: isLaserSheet ? {
                 cutLengthInches: 0,
                 yieldPercentage: 80,
                 powerkW: 6,
                 blankAreaSqIn: blankArea || 0,
+                numberOfPierces: 0
+            } : undefined,
+            laserTubeParams: isLaserTube ? {
+                cutLengthInches: 0,
+                numberOfBars: 1,
+                powerkW: 6,
                 numberOfPierces: 0
             } : undefined
         }]);
@@ -1263,69 +1393,69 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
             }
             const processedOps = partOps.map(po => {
                 const op = operations.find(o => o.id === po.operationId);
-                if (op?.name.toLowerCase().includes('pliage') && po.bendingParams) {
+                if (op?.name?.toLowerCase().includes('pliage') && po.bendingParams) {
                     const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
                     return { ...po, estimatedTimeMinutes: result.totalTimeMinutes, bendingResult: result };
                 }
-                if ((op?.name.toLowerCase().includes('laser') || op?.name.toLowerCase().includes('découpe') || op?.name.toLowerCase().includes('cut')) && po.laserParams) {
+                if ((op?.name?.toLowerCase().includes('laser') || op?.name?.toLowerCase().includes('découpe') || op?.name?.toLowerCase().includes('cut')) && po.laserParams) {
                     const material = materials.find(m => m.id === materialId);
                     const result = calculateLaserCost(laserSettings, material, { ...po.laserParams, quantity });
-                    return { ...po, estimatedTimeMinutes: result.cuttingTimeMinutes, laserResult: result };
+                    return { ...po, estimatedTimeMinutes: result.totalTimeMinutes, laserResult: result };
+                }
+                if (po.laserTubeParams) {
+                    const material = materials.find(m => m.id === materialId);
+                    const result = calculateLaserTubeCost(laserTubeSettings, material, { ...po.laserTubeParams, quantity });
+                    return { ...po, estimatedTimeMinutes: result.totalTimeMinutes, laserTubeResult: result };
                 }
                 return po;
             });
 
             if (initialData) {
-                onSubmit({ ...initialData, name: name.trim(), materialId, dimensionX, dimensionY, operations: processedOps, quantity, filePdf, filePdfName, fileDxf, fileDxfName, fileStep, fileStepName, subcontractingItems, supplierLinks });
+                onSubmit({ 
+                    ...initialData, 
+                    name: name.trim(), 
+                    materialId, 
+                    dimensionX: dimensionConfig.x ? dimensionX : 0, 
+                    dimensionY: dimensionConfig.y ? dimensionY : 0, 
+                    dimensionZ: dimensionConfig.z ? dimensionZ : 0, 
+                    weight,
+                    operations: processedOps, 
+                    quantity, 
+                    filePdf, 
+                    filePdfName, 
+                    fileDxf, 
+                    fileDxfName, 
+                    fileStep, 
+                    fileStepName, 
+                    subcontractingItems, 
+                    supplierLinks, 
+                    ownerId: ownerId 
+                });
             } else {
-                onSubmit({ name: name.trim(), materialId, dimensionX, dimensionY, operations: processedOps, quantity, filePdf, filePdfName, fileDxf, fileDxfName, fileStep, fileStepName, subcontractingItems, supplierLinks });
+                onSubmit({ 
+                    name: name.trim(), 
+                    materialId, 
+                    dimensionX: dimensionConfig.x ? dimensionX : 0, 
+                    dimensionY: dimensionConfig.y ? dimensionY : 0, 
+                    dimensionZ: dimensionConfig.z ? dimensionZ : 0, 
+                    weight,
+                    operations: processedOps, 
+                    quantity, 
+                    filePdf, 
+                    filePdfName, 
+                    fileDxf, 
+                    fileDxfName, 
+                    fileStep, 
+                    fileStepName, 
+                    subcontractingItems, 
+                    supplierLinks, 
+                    ownerId: ownerId 
+                });
             }
         }
     };
 
     const submitText = initialData ? 'Save Changes' : 'Add Part';
-
-    const materialCostPerUnit = useMemo(() => {
-        const material = materials.find(m => m.id === materialId);
-        if (!material) return 0;
-        
-        if (blankArea > 0) {
-            return (blankArea / 144) * material.costPerSqFt;
-        }
-        
-        const bendingOp = partOps.find(po => po.bendingParams);
-        if (bendingOp?.bendingParams) {
-            const { areaSqIn, weightLbs } = bendingOp.bendingParams;
-            if (areaSqIn > 0) {
-                return (areaSqIn / 144) * material.costPerSqFt;
-            } else if (weightLbs > 0) {
-                return weightLbs * material.costPerLb;
-            }
-        }
-        
-        const laserOp = partOps.find(po => po.laserParams);
-        if (laserOp?.laserParams) {
-            const { blankAreaSqIn, yieldPercentage, numberOfSheets, sheetAreaSqIn, materialCostSelection } = laserOp.laserParams;
-            const selection = materialCostSelection || 'blank';
-            
-            if (selection === 'blank') {
-                if (blankAreaSqIn > 0) {
-                    return (blankAreaSqIn / 144) * material.costPerSqFt;
-                }
-            } else if (selection === 'real') {
-                if (blankAreaSqIn > 0) {
-                    const realArea = blankAreaSqIn * (yieldPercentage / 100);
-                    return (realArea / 144) * material.costPerSqFt;
-                }
-            } else if (selection === 'nest') {
-                if (numberOfSheets && sheetAreaSqIn && quantity > 0) {
-                    const totalMaterialCost = (numberOfSheets * sheetAreaSqIn / 144) * material.costPerSqFt;
-                    return totalMaterialCost / quantity;
-                }
-            }
-        }
-        return 0;
-    }, [materialId, materials, partOps, quantity, blankArea]);
 
     const operationCosts = useMemo(() => {
         return partOps.map(po => {
@@ -1333,14 +1463,14 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
             let unitPrice = 0;
             let type = 'standard';
             let details: { totalTimeMinutes?: number; timeMinutes?: number; unitPrice?: number } | null = null;
-            if (op?.name.toLowerCase().includes('pliage') || op?.name.toLowerCase().includes('bend')) {
+            if (op?.name?.toLowerCase().includes('pliage') || op?.name?.toLowerCase().includes('bend')) {
                 type = 'bending';
                 if (po.bendingParams) {
                     const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
                     unitPrice = result.unitPrice;
                     details = result;
                 }
-            } else if (op?.name.toLowerCase().includes('laser') || op?.name.toLowerCase().includes('découpe') || op?.name.toLowerCase().includes('cut')) {
+            } else if (op?.name?.toLowerCase().includes('laser') || op?.name?.toLowerCase().includes('découpe') || op?.name?.toLowerCase().includes('cut')) {
                 type = 'laser';
                 if (po.laserParams) {
                     const material = materials.find(m => m.id === materialId);
@@ -1351,6 +1481,12 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                     unitPrice = ((op?.rate || 0) * (po.estimatedTimeMinutes / 60)) / quantity;
                     details = { timeMinutes: po.estimatedTimeMinutes };
                 }
+            } else if (po.laserTubeParams) {
+                type = 'laserTube';
+                const material = materials.find(m => m.id === materialId);
+                const result = calculateLaserTubeCost(laserTubeSettings, material, { ...po.laserTubeParams, quantity });
+                unitPrice = result.unitPrice;
+                details = result;
             } else {
                 unitPrice = ((op?.rate || 0) * (po.estimatedTimeMinutes / 60)) / quantity;
                 details = { timeMinutes: po.estimatedTimeMinutes };
@@ -1363,7 +1499,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                 details
             };
         });
-    }, [partOps, operations, bendingSettings, laserSettings, quantity, materialId, materials]);
+    }, [partOps, operations, bendingSettings, laserSettings, laserTubeSettings, quantity, materialId, materials]);
 
     const totalMachineTimeMinutes = useMemo(() => {
         return operationCosts.reduce((total, oc) => {
@@ -1374,16 +1510,11 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
         }, 0);
     }, [operationCosts]);
 
-    const totalUnitCost = useMemo(() => {
-        const opsTotal = operationCosts.reduce((acc, oc) => acc + oc.unitPrice, 0);
-        return opsTotal + materialCostPerUnit;
-    }, [operationCosts, materialCostPerUnit]);
-
     return (
         <FormContainer isSubForm={isSubForm} onSubmit={handleSubmit} onPaste={handlePaste} className="space-y-4 h-full flex flex-col">
-            <div className={`flex flex-col ${isSubForm ? '' : 'lg:flex-row'} gap-6 h-full`}>
+            <div className={`flex flex-col ${isSubForm ? '' : 'md:flex-row'} gap-6 h-full`}>
                 {/* Left Panel: Image Upload (55%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[55%]'} flex flex-col gap-2`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[55%] lg:w-[55%]'} flex flex-col gap-2`}>
                     <div className="flex justify-between items-center">
                         <h3 className="text-sm font-bold text-slate-900">Plan / Dessin</h3>
                     </div>
@@ -1554,54 +1685,24 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                 </div>
 
                 {/* Middle Panel: Recapitulatif (20%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[20%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[20%] lg:w-[20%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Récapitulatif</h3>
                         <div className="space-y-3">
                             <div className="py-2 border-b border-slate-200">
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-slate-600">Matériel</span>
-                                    <span className="font-medium text-slate-900">{materialCostPerUnit.toFixed(2)} $</span>
+                                    <span className="text-slate-600 font-bold">Matériel</span>
                                 </div>
                                 {(() => {
                                     const laserOp = partOps.find(po => po.laserParams);
                                     if (laserOp && laserOp.laserParams) {
-                                        const material = materials.find(m => m.id === materialId);
-                                        const costPerSqFt = material?.costPerSqFt || 0;
-                                        const blankPrice = (laserOp.laserParams.blankAreaSqIn / 144) * costPerSqFt;
-                                        const realPrice = (laserOp.laserParams.blankAreaSqIn * (laserOp.laserParams.yieldPercentage / 100) / 144) * costPerSqFt;
-                                        const nestPrice = quantity > 0 ? ((laserOp.laserParams.numberOfSheets || 0) * (laserOp.laserParams.sheetAreaSqIn || 0) / 144 * costPerSqFt) / quantity : 0;
-                                        
                                         return (
-                                            <div className="mt-2 pl-2 border-l-2 border-slate-200 space-y-1">
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input 
-                                                        type="radio" 
-                                                        name={`matCostSummary-${laserOp.operationId}`}
-                                                        checked={(laserOp.laserParams.materialCostSelection || 'blank') === 'blank'}
-                                                        onChange={() => setPartOps(prev => prev.map(po => po.operationId === laserOp.operationId ? {...po, laserParams: {...po.laserParams!, materialCostSelection: 'blank'}} : po))}
-                                                    />
-                                                    <span className="text-[10px] text-slate-500 italic">Blank: {blankPrice.toFixed(2)} $</span>
-                                                </label>
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input 
-                                                        type="radio" 
-                                                        name={`matCostSummary-${laserOp.operationId}`}
-                                                        checked={laserOp.laserParams.materialCostSelection === 'real'}
-                                                        onChange={() => setPartOps(prev => prev.map(po => po.operationId === laserOp.operationId ? {...po, laserParams: {...po.laserParams!, materialCostSelection: 'real'}} : po))}
-                                                    />
-                                                    <span className="text-[10px] text-slate-500 italic">Réel: {realPrice.toFixed(2)} $</span>
-                                                </label>
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input 
-                                                        type="radio" 
-                                                        name={`matCostSummary-${laserOp.operationId}`}
-                                                        checked={laserOp.laserParams.materialCostSelection === 'nest'}
-                                                        onChange={() => setPartOps(prev => prev.map(po => po.operationId === laserOp.operationId ? {...po, laserParams: {...po.laserParams!, materialCostSelection: 'nest'}} : po))}
-                                                    />
-                                                    <span className="text-[10px] text-slate-500 italic">Nest: {nestPrice.toFixed(2)} $</span>
-                                                </label>
-                                            </div>
+                                            <>
+                                                {/* Pricing selections removed per user request */}
+                                                <div className="mt-2 pl-2 border-l-2 border-slate-200">
+                                                    <span className="text-[10px] text-slate-400 italic">Détails opérationnels configurés</span>
+                                                </div>
+                                            </>
                                         );
                                     }
                                     return null;
@@ -1612,15 +1713,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                 <div key={oc.id} className="py-2 border-b border-slate-200">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-slate-600">{oc.name}</span>
-                                        <span className="font-medium text-slate-900">{(oc.unitPrice || 0).toFixed(2)} $</span>
                                     </div>
-                                    {oc.type === 'laser' && oc.details && (
-                                        <div className="mt-1 text-[10px] text-slate-500 italic space-y-0.5 pl-2 border-l-2 border-slate-200">
-                                            <div className="flex justify-between"><span>Machine:</span><span>{((oc.details.machineCost || 0) / (quantity || 1)).toFixed(2)} $</span></div>
-                                            <div className="flex justify-between"><span>Setup:</span><span>{((oc.details.setupCost || 0) / (quantity || 1)).toFixed(2)} $</span></div>
-                                            <div className="flex justify-between"><span>Gaz/Elec:</span><span>{(((oc.details.gasCost || 0) + (oc.details.electricityCost || 0)) / (quantity || 1)).toFixed(2)} $</span></div>
-                                        </div>
-                                    )}
                                 </div>
                             ))}
 
@@ -1630,7 +1723,6 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                     {subcontractingItems.map(item => (
                                         <div key={item.id} className="flex justify-between text-sm py-0.5">
                                             <span className="text-slate-600 truncate max-w-[120px]">{item.description}</span>
-                                            <span className="font-medium text-slate-900">{(item.applyType === 'perUnit' ? item.cost : item.cost / (quantity || 1)).toFixed(2)} $</span>
                                         </div>
                                     ))}
                                 </div>
@@ -1646,7 +1738,6 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                         {globalSubs.map(s => (
                                             <div key={s.id} className="flex justify-between text-sm py-0.5">
                                                 <span className="text-blue-600 truncate max-w-[120px]">{s.name}</span>
-                                                <span className="font-medium text-blue-900">{(s.cost || s.defaultCost).toFixed(2)} $</span>
                                             </div>
                                         ))}
                                     </div>
@@ -1654,16 +1745,8 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                             })()}
                             
                             <div className="pt-3 mt-2 border-t-2 border-slate-200">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-bold text-slate-900 uppercase">Total Unitaire</span>
-                                    <span className="text-lg font-bold text-[#0078d4]">{totalUnitCost.toFixed(2)} $</span>
-                                </div>
-                                <div className="flex justify-between items-center mt-1">
-                                    <span className="text-xs text-slate-500">Total ({quantity} pcs)</span>
-                                    <span className="text-sm font-medium text-slate-700">{(totalUnitCost * quantity).toFixed(2)} $</span>
-                                </div>
                                 <div className="mt-2 text-[10px] text-slate-400 italic">
-                                    Temps total: {totalMachineTimeMinutes.toFixed(1)} min
+                                    Temps total estimé: {totalMachineTimeMinutes.toFixed(1)} min
                                 </div>
                             </div>
                         </div>
@@ -1671,7 +1754,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                 </div>
 
                 {/* Right Panel: Form (25%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[25%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[25%] lg:w-[25%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
                     <div className="grid grid-cols-1 gap-4">
                         <div>
                             <label htmlFor="partName" className="block text-sm font-medium text-slate-700">Part Name</label>
@@ -1689,26 +1772,25 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                             />
                             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
                         </div>
-                        <div>
-                            <label htmlFor="partQuantity" className="block text-sm font-medium text-slate-700">Quantity</label>
-                            <input
-                                type="number"
-                                id="partQuantity"
-                                value={quantity}
-                                min="1"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                    setQuantity(parseInt(e.target.value) || 1);
-                                    if (errors.quantity) setErrors(prev => ({ ...prev, quantity: '' }));
-                                }}
-                                className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${
-                                    errors.quantity ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-[#0078d4] focus:ring-[#0078d4]'
-                                }`}
-                            />
-                            {errors.quantity && <p className="mt-1 text-xs text-red-600">{errors.quantity}</p>}
-                        </div>
-                    </div>
 
-            <div className={`border rounded-md p-3 transition-colors ${errors.materialId ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}>
+                        <div>
+                            <label htmlFor="ownerId" className="block text-sm font-medium text-slate-700">Client</label>
+                            <select
+                                id="ownerId"
+                                value={ownerId}
+                                onChange={(e) => setOwnerId(e.target.value)}
+                                className="mt-1 block w-full border border-slate-300 rounded-md shadow-sm sm:text-sm focus:border-[#0078d4] focus:ring-[#0078d4] p-2 bg-slate-50"
+                            >
+                                <option value="">-- Aucun client (Générique) --</option>
+                                {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">Subcontracting Addons</label>
+                                <p className="text-xs text-slate-500 mt-1">Managed in sub-items or globally.</p>
+                            </div>
+                        </div>
                 <button 
                     type="button" 
                     onClick={() => setShowMaterialFilters(!showMaterialFilters)}
@@ -1829,27 +1911,43 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                 )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-slate-700">Dimension X (po)</label>
-                    <input
-                        type="number"
-                        value={dimensionX || ''}
-                        onChange={(e) => setDimensionX(parseFloat(e.target.value) || 0)}
-                        className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
-                        placeholder="0.00"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700">Dimension Y (po)</label>
-                    <input
-                        type="number"
-                        value={dimensionY || ''}
-                        onChange={(e) => setDimensionY(parseFloat(e.target.value) || 0)}
-                        className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
-                        placeholder="0.00"
-                    />
-                </div>
+            <div className={`grid gap-4 ${dimensionConfig.z ? 'grid-cols-3' : (dimensionConfig.y ? 'grid-cols-2' : 'grid-cols-1')}`}>
+                {dimensionConfig.x && (
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">{dimensionConfig.labels.x}</label>
+                        <input
+                            type="number"
+                            value={dimensionX || ''}
+                            onChange={(e) => setDimensionX(parseFloat(e.target.value) || 0)}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
+                            placeholder="0.00"
+                        />
+                    </div>
+                )}
+                {dimensionConfig.y && (
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">{dimensionConfig.labels.y}</label>
+                        <input
+                            type="number"
+                            value={dimensionY || ''}
+                            onChange={(e) => setDimensionY(parseFloat(e.target.value) || 0)}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
+                            placeholder="0.00"
+                        />
+                    </div>
+                )}
+                {dimensionConfig.z && (
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">{dimensionConfig.labels.z}</label>
+                        <input
+                            type="number"
+                            value={dimensionZ || ''}
+                            onChange={(e) => setDimensionZ(parseFloat(e.target.value) || 0)}
+                            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-[#0078d4] focus:ring-[#0078d4] sm:text-sm"
+                            placeholder="0.00"
+                        />
+                    </div>
+                )}
             </div>
 
             <div className="border-t border-slate-200 pt-4">
@@ -1889,8 +1987,9 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                             const op = operations.find(o => o.id === currentPartOp.operationId);
                             if (!op) return null;
                             const isBending = op.name?.toLowerCase().includes('pliage') || op.name?.toLowerCase().includes('bend');
-                            const isLaser = op.name?.toLowerCase().includes('laser') || op.name?.toLowerCase().includes('découpe') || op.name?.toLowerCase().includes('cut');
-                            
+                            const isLaserSheet = (op.name?.toLowerCase().includes('laser') || op.name?.toLowerCase().includes('découpe') || op.name?.toLowerCase().includes('cut')) && !op.name?.toLowerCase().includes('tube');
+                            const isLaserTube = (op.name?.toLowerCase().includes('laser') || op.name?.toLowerCase().includes('découpe') || op.name?.toLowerCase().includes('cut')) && op.name?.toLowerCase().includes('tube');
+
                             return (
                                 <div key={currentPartOp.id} className="border rounded-md p-2 bg-white shadow-sm">
                                     <div className="flex items-center justify-between">
@@ -1907,7 +2006,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                             <span className="text-sm text-slate-700 font-medium">{op.name}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {(isBending || isLaser) && (
+                                            {(isBending || isLaserSheet || isLaserTube) && (
                                                 <button type="button" onClick={() => setExpandedOpId(expandedOpId === currentPartOp.id ? null : currentPartOp.id!)} className="text-xs text-[#0078d4]">
                                                     {expandedOpId === currentPartOp.id ? 'Collapse' : 'Configure'}
                                                 </button>
@@ -1953,7 +2052,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                                 <label className="text-xs text-slate-600">Néoprène</label>
                                             </div>
                                             <div className="flex justify-end gap-2">
-                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, isConfirmed: false, bendingResult: undefined} : po))} className="text-xs text-red-600">Abort</button>
+                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, isConfirmed: false, bendingResult: null} : po))} className="text-xs text-red-600">Abort</button>
                                                 <button type="button" onClick={() => setPartOps(prev => prev.map(po => {
                                                     if (po.id === currentPartOp.id && po.bendingParams) {
                                                         const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
@@ -1964,7 +2063,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                             </div>
                                         </div>
                                     )}
-                                    {isLaser && expandedOpId === currentPartOp.id && currentPartOp?.laserParams && (
+                                    {isLaserSheet && expandedOpId === currentPartOp.id && currentPartOp?.laserParams && (
                                         <div className="mt-2 p-3 bg-slate-50 rounded-md space-y-2 border border-slate-200">
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
@@ -2011,7 +2110,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                                 </div>
                                             </div>
                                             <div className="flex justify-end gap-2 mt-3">
-                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, isConfirmed: false, laserResult: undefined} : po))} className="text-xs text-red-600">Abort</button>
+                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, isConfirmed: false, laserResult: null} : po))} className="text-xs text-red-600">Abort</button>
                                                 <button type="button" onClick={() => setPartOps(prev => prev.map(po => {
                                                     if (po.id === currentPartOp.id && po.laserParams) {
                                                         const material = materials.find(m => m.id === materialId);
@@ -2023,7 +2122,44 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
                                             </div>
                                         </div>
                                     )}
-                                    {!isBending && !isLaser && (
+                                    {isLaserTube && expandedOpId === currentPartOp.id && currentPartOp?.laserTubeParams && (
+                                        <div className="mt-2 p-3 bg-slate-50 rounded-md space-y-2 border border-slate-200">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-700">Longueur de coupe (po)</label>
+                                                    <input type="number" value={currentPartOp.laserTubeParams.cutLengthInches ?? 0} onChange={e => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, laserTubeParams: {...po.laserTubeParams!, cutLengthInches: parseFloat(e.target.value) || 0}} : po))} className="block w-full rounded-md border-slate-300 shadow-sm sm:text-xs" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-700">Nbr Perçages</label>
+                                                    <input type="number" value={currentPartOp.laserTubeParams.numberOfPierces ?? 0} onChange={e => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, laserTubeParams: {...po.laserTubeParams!, numberOfPierces: parseInt(e.target.value) || 0}} : po))} className="block w-full rounded-md border-slate-300 shadow-sm sm:text-xs" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-700">Nombre de Barres</label>
+                                                    <input type="number" value={currentPartOp.laserTubeParams.numberOfBars ?? 0} onChange={e => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, laserTubeParams: {...po.laserTubeParams!, numberOfBars: parseInt(e.target.value) || 0}} : po))} className="block w-full rounded-md border-slate-300 shadow-sm sm:text-xs" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-700">Puissance (kW)</label>
+                                                    <input type="number" value={currentPartOp.laserTubeParams.powerkW ?? 0} onChange={e => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, laserTubeParams: {...po.laserTubeParams!, powerkW: parseInt(e.target.value) || 0}} : po))} className="block w-full rounded-md border-slate-300 shadow-sm sm:text-xs" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-700">Temps de setup (min)</label>
+                                                    <input type="number" value={currentPartOp.laserTubeParams.setupTimeMinutes ?? 0} onChange={e => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, laserTubeParams: {...po.laserTubeParams!, setupTimeMinutes: parseInt(e.target.value) || 0}} : po))} className="block w-full rounded-md border-slate-300 shadow-sm sm:text-xs" />
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-2 mt-3">
+                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => po.id === currentPartOp.id ? {...po, isConfirmed: false, laserTubeResult: null} : po))} className="text-xs text-red-600">Abort</button>
+                                                <button type="button" onClick={() => setPartOps(prev => prev.map(po => {
+                                                    if (po.id === currentPartOp.id && po.laserTubeParams) {
+                                                        const material = materials.find(m => m.id === materialId);
+                                                        const result = calculateLaserTubeCost(laserTubeSettings, material, { ...po.laserTubeParams, quantity });
+                                                        return { ...po, isConfirmed: true, laserTubeResult: result };
+                                                    }
+                                                    return po;
+                                                }))} className="text-xs text-green-600 font-bold">Confirm</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {!isBending && !isLaserSheet && !isLaserTube && (
                                         <div className="mt-2 ml-7 space-y-2">
                                             <div className="flex items-center gap-2">
                                                 <input
@@ -2074,7 +2210,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
 
                 <div className="pt-4 border-t border-slate-100">
                     <label className="block text-sm font-bold text-slate-900 mb-2">Sous-traitance</label>
-                    <SubcontractingItemsList 
+                    <SubcontractingRequirementSelector 
                         items={subcontractingItems}
                         subcontractings={subcontractings}
                         onChange={setSubcontractingItems}
@@ -2100,6 +2236,7 @@ export const PartForm: React.FC<PartFormProps> = ({ operations, materials, suppl
 
 
 interface AssemblyFormProps {
+    clients?: Client[];
     parts: Part[];
     assemblies: Assembly[];
     operations: Operation[];
@@ -2108,6 +2245,7 @@ interface AssemblyFormProps {
     subcontractings: Subcontracting[];
     bendingSettings: BendingSettings;
     laserSettings: LaserSettings;
+    laserTubeSettings: LaserTubeSettings;
     onSubmit: (assembly: Omit<Assembly, 'id'> | Assembly) => void;
     onCancel: () => void;
     onAddPart?: (part: Omit<Part, 'id'>) => Promise<string>;
@@ -2116,9 +2254,10 @@ interface AssemblyFormProps {
     isSubForm?: boolean;
 }
 
-export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, operations, materials, suppliers, subcontractings, bendingSettings, laserSettings, onSubmit, onCancel, onAddPart, onAddAssembly, initialData, isSubForm }) => {
+export const AssemblyForm: React.FC<AssemblyFormProps> = ({ clients, parts, assemblies, operations, materials, suppliers, subcontractings, bendingSettings, laserSettings, laserTubeSettings, onSubmit, onCancel, onAddPart, onAddAssembly, initialData, isSubForm }) => {
     const [name, setName] = useState(initialData?.name || '');
-    const [quantity, setQuantity] = useState(initialData?.quantity || 1);
+    const [ownerId, setOwnerId] = useState(initialData?.ownerId || '');
+    const quantity = 1;
     const [selectedItems, setSelectedItems] = useState<AssemblyItem[]>(() => 
         (initialData?.items || []).map(item => ({ 
             ...item, 
@@ -2174,7 +2313,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
     const handleAddOperation = () => {
         if (!selectedOpToAdd) return;
         const op = operations.find(o => o.id === selectedOpToAdd);
-        const isBending = op?.name.toLowerCase().includes('pliage') || op?.name.toLowerCase().includes('bend');
+        const isBending = op?.name?.toLowerCase().includes('pliage') || op?.name?.toLowerCase().includes('bend');
         setAssemblyOps(prev => [...prev, { 
             id: Date.now().toString() + Math.random().toString(),
             operationId: selectedOpToAdd, 
@@ -2318,7 +2457,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
             }
             const processedOps = assemblyOps.map(po => {
                 const op = operations.find(o => o.id === po.operationId);
-                if (op?.name.toLowerCase().includes('pliage') && po.bendingParams) {
+                if (op?.name?.toLowerCase().includes('pliage') && po.bendingParams) {
                     const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
                     return { ...po, estimatedTimeMinutes: result.totalTimeMinutes, bendingResult: result };
                 }
@@ -2326,9 +2465,9 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
             });
 
             if (initialData) {
-                onSubmit({ ...initialData, name: name.trim(), items: selectedItems, operations: processedOps, quantity, filePdf: filePdf || undefined, filePdfName: filePdfName || undefined, fileDxf: fileDxf || undefined, fileDxfName: fileDxfName || undefined, fileStep: fileStep || undefined, fileStepName: fileStepName || undefined, subcontractingItems });
+                onSubmit({ ...initialData, name: name.trim(), items: selectedItems, operations: processedOps, quantity, filePdf: filePdf || null, filePdfName: filePdfName || null, fileDxf: fileDxf || null, fileDxfName: fileDxfName || null, fileStep: fileStep || null, fileStepName: fileStepName || null, subcontractingItems, ownerId: ownerId });
             } else {
-                onSubmit({ name: name.trim(), items: selectedItems, operations: processedOps, quantity, filePdf: filePdf || undefined, filePdfName: filePdfName || undefined, fileDxf: fileDxf || undefined, fileDxfName: fileDxfName || undefined, fileStep: fileStep || undefined, fileStepName: fileStepName || undefined, subcontractingItems });
+                onSubmit({ name: name.trim(), items: selectedItems, operations: processedOps, quantity, filePdf: filePdf || null, filePdfName: filePdfName || null, fileDxf: fileDxf || null, fileDxfName: fileDxfName || null, fileStep: fileStep || null, fileStepName: fileStepName || null, subcontractingItems, ownerId: ownerId });
             }
         }
     };
@@ -2343,13 +2482,13 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                 const part = parts.find(p => p.id === item.id);
                 itemName = part?.name || 'Unknown Part';
                 if (part) {
-                    unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, subcontractings);
+                    unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                 }
             } else {
                 const subAssembly = assemblies.find(a => a.id === item.id);
                 itemName = subAssembly?.name || 'Unknown Assembly';
                 if (subAssembly) {
-                    unitPrice = calculateAssemblyUnitCost(subAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+                    unitPrice = calculateAssemblyUnitCost(subAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                 }
             }
             return {
@@ -2359,15 +2498,25 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                 unitPrice
             };
         });
-    }, [selectedItems, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings]);
+    }, [selectedItems, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings]);
 
     const operationCosts = useMemo(() => {
         return assemblyOps.map(po => {
             const op = operations.find(o => o.id === po.operationId);
             let unitPrice = 0;
-            if (op?.name.toLowerCase().includes('pliage') || op?.name.toLowerCase().includes('bend')) {
+            if (op?.name?.toLowerCase().includes('pliage') || op?.name?.toLowerCase().includes('bend')) {
                 if (po.bendingParams) {
                     const result = calculateBendingCost(bendingSettings, { ...po.bendingParams, quantity });
+                    unitPrice = result.unitPrice;
+                }
+            } else if (op?.name?.toLowerCase().includes('laser') && !op?.name?.toLowerCase().includes('tube')) {
+                if (po.laserParams) {
+                    const result = calculateLaserCost(laserSettings, null, { ...po.laserParams, quantity });
+                    unitPrice = result.unitPrice;
+                }
+            } else if (op?.name?.toLowerCase().includes('laser') && op?.name?.toLowerCase().includes('tube')) {
+                if (po.laserTubeParams) {
+                    const result = calculateLaserTubeCost(laserTubeSettings, null, { ...po.laserTubeParams, quantity });
                     unitPrice = result.unitPrice;
                 }
             } else {
@@ -2379,19 +2528,13 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                 unitPrice
             };
         });
-    }, [assemblyOps, operations, bendingSettings, quantity]);
-
-    const totalUnitCost = useMemo(() => {
-        const opsTotal = operationCosts.reduce((acc, oc) => acc + oc.unitPrice, 0);
-        const itemsTotal = itemCosts.reduce((acc, ic) => acc + (ic.unitPrice * ic.quantity), 0);
-        return opsTotal + itemsTotal;
-    }, [operationCosts, itemCosts]);
+    }, [assemblyOps, operations, bendingSettings, laserSettings, laserTubeSettings, quantity]);
 
     return (
         <FormContainer isSubForm={isSubForm} onSubmit={handleSubmit} onPaste={handlePaste} className="space-y-4 h-full flex flex-col">
-            <div className={`flex flex-col ${isSubForm ? '' : 'lg:flex-row'} gap-6 h-full`}>
+            <div className={`flex flex-col ${isSubForm ? '' : 'md:flex-row lg:flex-row'} gap-6 h-full`}>
                 {/* Left Panel: Image Upload (40%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[40%]'} flex flex-col gap-2`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[40%] lg:w-[40%]'} flex flex-col gap-2`}>
                     <div className="flex justify-between items-center">
                         <h3 className="text-sm font-bold text-slate-900">Plan / Dessin</h3>
                     </div>
@@ -2534,44 +2677,44 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                 </div>
 
                 {/* Middle Panel: Items & Operations (40%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[40%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[40%] lg:w-[40%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="assemblyName" className="block text-sm font-medium text-slate-700">Assembly Name</label>
-                            <input
-                                type="text"
-                                id="assemblyName"
-                                value={name}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                    setName(e.target.value);
-                                    if (errors.name) setErrors(prev => ({ ...prev, name: '' }));
-                                }}
-                                className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${
-                                    errors.name ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-[#0078d4] focus:ring-[#0078d4]'
-                                }`}
-                            />
-                            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-1 md:col-span-2">
+                            <div>
+                                <label htmlFor="assemblyName" className="block text-sm font-medium text-slate-700">Assembly Name</label>
+                                <input
+                                    type="text"
+                                    id="assemblyName"
+                                    value={name}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                        setName(e.target.value);
+                                        if (errors.name) setErrors(prev => ({ ...prev, name: '' }));
+                                    }}
+                                    className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${
+                                        errors.name ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-[#0078d4] focus:ring-[#0078d4]'
+                                    }`}
+                                />
+                                {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+                            </div>
+                            <div>
+                                <label htmlFor="assemblyOwnerId" className="block text-sm font-medium text-slate-700">Client</label>
+                                <select
+                                    id="assemblyOwnerId"
+                                    value={ownerId}
+                                    onChange={(e) => setOwnerId(e.target.value)}
+                                    className="mt-1 block w-full border border-slate-300 rounded-md shadow-sm sm:text-sm focus:border-[#0078d4] focus:ring-[#0078d4] p-2 bg-slate-50"
+                                >
+                                    <option value="">-- Aucun client (Générique) --</option>
+                                    {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label htmlFor="assemblyQuantity" className="block text-sm font-medium text-slate-700">Quantity</label>
-                            <input
-                                type="number"
-                                id="assemblyQuantity"
-                                value={quantity}
-                                min="1"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                    setQuantity(parseInt(e.target.value) || 1);
-                                    if (errors.quantity) setErrors(prev => ({ ...prev, quantity: '' }));
-                                }}
-                                className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${
-                                    errors.quantity ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-[#0078d4] focus:ring-[#0078d4]'
-                                }`}
-                            />
-                            {errors.quantity && <p className="mt-1 text-xs text-red-600">{errors.quantity}</p>}
+                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">Subcontracting Addons</label>
+                                <p className="text-xs text-slate-500 mt-1">Managed in sub-items or globally.</p>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="space-y-4">
                         <div className="flex justify-between items-center">
                             <label className="block text-sm font-medium text-slate-700">Items (Parts & Sub-assemblies)</label>
                             <div className="flex gap-2">
@@ -2602,12 +2745,14 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <h4 className="text-xs font-bold text-slate-700 uppercase mb-3">Quick Add Part</h4>
                                 <PartForm 
+                                    clients={clients}
                                     materials={materials} 
                                     operations={operations} 
                                     suppliers={suppliers}
                                     subcontractings={subcontractings}
                                     bendingSettings={bendingSettings}
                                     laserSettings={laserSettings}
+                                    laserTubeSettings={laserTubeSettings}
                                     isSubForm={true}
                                     onSubmit={async (data) => {
                                         const newId = await onAddPart(data);
@@ -2623,6 +2768,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <h4 className="text-xs font-bold text-slate-700 uppercase mb-3">Quick Add Assembly</h4>
                                 <AssemblyForm 
+                                    clients={clients}
                                     parts={parts}
                                     assemblies={assemblies}
                                     operations={operations}
@@ -2631,6 +2777,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                                     subcontractings={subcontractings}
                                     bendingSettings={bendingSettings}
                                     laserSettings={laserSettings}
+                                    laserTubeSettings={laserTubeSettings}
                                     isSubForm={true}
                                     onSubmit={async (data) => {
                                         const newId = await onAddAssembly(data as Omit<Assembly, 'id'>);
@@ -2793,7 +2940,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                                                     <label className="text-xs text-slate-600">Néoprène</label>
                                                 </div>
                                                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
-                                                    <button type="button" onClick={() => setAssemblyOps(prev => prev.map(p => p.id === po.id ? {...p, isConfirmed: false, bendingResult: undefined} : p))} className="text-xs text-red-600 hover:text-red-800 px-2 py-1">Annuler</button>
+                                                    <button type="button" onClick={() => setAssemblyOps(prev => prev.map(p => p.id === po.id ? {...p, isConfirmed: false, bendingResult: null} : p))} className="text-xs text-red-600 hover:text-red-800 px-2 py-1">Annuler</button>
                                                     <button type="button" onClick={() => setAssemblyOps(prev => prev.map(p => {
                                                         if (p.id === po.id && p.bendingParams) {
                                                             const result = calculateBendingCost(bendingSettings, { ...p.bendingParams, quantity });
@@ -2894,7 +3041,7 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
 
                     <div className="pt-4 border-t border-slate-100">
                         <label className="block text-sm font-bold text-slate-900 mb-2">Sous-traitance</label>
-                        <SubcontractingItemsList 
+                        <SubcontractingRequirementSelector 
                             items={subcontractingItems}
                             subcontractings={subcontractings}
                             onChange={setSubcontractingItems}
@@ -2904,15 +3051,14 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                 </div>
 
                 {/* Right Panel: Recapitulatif & Form (20%) */}
-                <div className={`w-full ${isSubForm ? '' : 'lg:w-[20%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
+                <div className={`w-full ${isSubForm ? '' : 'md:w-[20%] lg:w-[20%]'} flex flex-col gap-4 overflow-y-auto pr-2 max-h-[80vh]`}>
                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Récapitulatif des Coûts Unitaires (Assemblage)</h3>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Récapitulatif de l'Assemblage</h3>
                         <div className="space-y-3">
                             <div className="text-xs font-bold text-slate-500 uppercase tracking-tight border-b border-slate-200 pb-1">Composants</div>
                             {itemCosts.map(ic => (
                                 <div key={ic.id} className="flex justify-between text-sm py-1">
                                     <span className="text-slate-600">{ic.name} (x{ic.quantity})</span>
-                                    <span className="font-medium text-slate-900">{(ic.unitPrice * ic.quantity).toFixed(2)} $</span>
                                 </div>
                             ))}
                             
@@ -2920,7 +3066,6 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                             {operationCosts.map(oc => (
                                 <div key={oc.id} className="flex justify-between text-sm py-1">
                                     <span className="text-slate-600">{oc.name}</span>
-                                    <span className="font-medium text-slate-900">{oc.unitPrice.toFixed(2)} $</span>
                                 </div>
                             ))}
 
@@ -2930,7 +3075,6 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                                     {subcontractingItems.map(item => (
                                         <div key={item.id} className="flex justify-between text-sm py-1">
                                             <span className="text-slate-600 truncate max-w-[120px]">{item.description}</span>
-                                            <span className="font-medium text-slate-900">{(item.applyType === 'perUnit' ? item.cost : item.cost / (quantity || 1)).toFixed(2)} $</span>
                                         </div>
                                     ))}
                                 </>
@@ -2946,19 +3090,14 @@ export const AssemblyForm: React.FC<AssemblyFormProps> = ({ parts, assemblies, o
                                         {globalSubs.map(s => (
                                             <div key={s.id} className="flex justify-between text-sm py-1">
                                                 <span className="text-blue-600 truncate max-w-[120px]">{s.name}</span>
-                                                <span className="font-medium text-blue-900">{(s.cost || s.defaultCost).toFixed(2)} $</span>
                                             </div>
                                         ))}
                                     </>
                                 );
                             })()}
                             
-                            <div className="flex justify-between text-base font-bold pt-4 text-blue-700 border-t border-slate-300 mt-4">
-                                <span>TOTAL UNITAIRE</span>
-                                <span>{totalUnitCost.toFixed(2)} $</span>
-                            </div>
                             <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-500 italic">
-                                * Les coûts sont calculés en temps réel basés sur une quantité de {quantity} assemblage(s).
+                                * Planification basée sur une quantité de 1 assemblage. La quantité réelle sera définie dans la soumission.
                             </div>
                         </div>
                     </div>
@@ -3815,9 +3954,9 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({ workOrders, quotes, de
     const handleSubmit = (e?: React.FormEvent) => {
         e?.preventDefault();
         onSubmit({ 
-            workOrderId: workOrderId || undefined, 
-            deliveryNoteId: deliveryNoteId || undefined,
-            quoteId: quoteId || undefined, 
+            workOrderId: workOrderId || null, 
+            deliveryNoteId: deliveryNoteId || null,
+            quoteId: quoteId || null, 
             date, 
             items,
             totalAmount 
@@ -3931,6 +4070,8 @@ interface EmployeeFormProps {
 export const EmployeeForm: React.FC<EmployeeFormProps> = ({ skills: allSkills, onSubmit, onCancel, initialData, isSubForm }) => {
     const [name, setName] = useState(initialData?.name || '');
     const [role, setRole] = useState(initialData?.role || '');
+    const [employeeNumber, setEmployeeNumber] = useState(initialData?.employeeNumber || '');
+    const [isManager, setIsManager] = useState(initialData?.isManager || false);
     const [employeeSkills, setEmployeeSkills] = useState<EmployeeSkill[]>(initialData?.skills || []);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -3950,6 +4091,8 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({ skills: allSkills, o
         const newErrors: Record<string, string> = {};
         if (!name.trim()) newErrors.name = 'Employee name is required';
         if (!role.trim()) newErrors.role = 'Role is required';
+        if (!employeeNumber.trim()) newErrors.employeeNumber = 'Employee number (3-digit code) is required';
+        else if (!/^\d{3}$/.test(employeeNumber)) newErrors.employeeNumber = 'Employee number must be exactly 3 digits';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -3957,10 +4100,17 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({ skills: allSkills, o
     const handleSubmit = (e?: React.FormEvent) => {
         e?.preventDefault();
         if (validate()) {
+            const dataToSubmit = {
+                name: name.trim(),
+                role: role.trim(),
+                employeeNumber: employeeNumber.trim(),
+                isManager,
+                skills: employeeSkills
+            };
             if (initialData) {
-                onSubmit({ ...initialData, name: name.trim(), role: role.trim(), skills: employeeSkills });
+                onSubmit({ ...initialData, ...dataToSubmit });
             } else {
-                onSubmit({ name: name.trim(), role: role.trim(), skills: employeeSkills });
+                onSubmit(dataToSubmit);
             }
         }
     };
@@ -3984,6 +4134,36 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({ skills: allSkills, o
                     }`}
                 />
                 {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+            </div>
+            <div>
+                <label htmlFor="employeeNumber" className="block text-sm font-medium text-slate-700">Code Employé (3 chiffres)</label>
+                <input
+                    type="text"
+                    id="employeeNumber"
+                    maxLength={3}
+                    placeholder="ex: 123"
+                    value={employeeNumber}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setEmployeeNumber(val);
+                        if (errors.employeeNumber) setErrors(prev => ({ ...prev, employeeNumber: '' }));
+                    }}
+                    className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${
+                        errors.employeeNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-[#0078d4] focus:ring-[#0078d4]'
+                    }`}
+                />
+                {errors.employeeNumber && <p className="mt-1 text-xs text-red-600">{errors.employeeNumber}</p>}
+            </div>
+            <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={isManager}
+                        onChange={(e) => setIsManager(e.target.checked)}
+                        className="rounded border-slate-300 text-[#0078d4] focus:ring-[#0078d4]"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Accès Gestionnaire</span>
+                </label>
             </div>
             <div>
                 <label htmlFor="employeeRole" className="block text-sm font-medium text-slate-700">Role</label>
@@ -4206,9 +4386,11 @@ interface MaterialFormProps {
   onSubmit: (material: Omit<Material, 'id'> | Material) => void;
   onCancel: () => void;
   initialData?: Material | null;
+  onDuplicate?: (material: Omit<Material, 'id'>) => void;
+  isSubForm?: boolean;
 }
 
-export const MaterialForm: React.FC<MaterialFormProps> = ({ onSubmit, onCancel, initialData, isSubForm }) => {
+export const MaterialForm: React.FC<MaterialFormProps> = ({ onSubmit, onCancel, initialData, onDuplicate, isSubForm }) => {
   const [description, setDescription] = useState(initialData?.description || '');
   const [type, setType] = useState(initialData?.type || '');
   const [materialType, setMaterialType] = useState(initialData?.materialType || '');
@@ -4461,6 +4643,34 @@ export const MaterialForm: React.FC<MaterialFormProps> = ({ onSubmit, onCancel, 
       </div>
       <div className="flex justify-end space-x-2 pt-4">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">Cancel</button>
+        {initialData && onDuplicate && (
+          <button 
+            type="button" 
+            onClick={() => {
+              if (validate()) {
+                const materialData = {
+                  description: description.trim() + " (copy)",
+                  type: type.trim(),
+                  materialType: materialType.trim(),
+                  profileDimensions: profileDimensions.trim(),
+                  thickness: Number(thickness),
+                  densityLbs: Number(densityLbs),
+                  weightPerLinearFt: Number(weightPerLinearFt),
+                  weightPerSqFt: Number(weightPerSqFt),
+                  costPerLb: Number(costPerLb),
+                  costPerSqFt: Number(costPerSqFt),
+                  costPerLinearFt: Number(costPerLinearFt),
+                  laserAdvance6kW: Number(laserAdvance6kW),
+                  laserAdvance12kW: Number(laserAdvance12kW),
+                };
+                onDuplicate(materialData);
+              }
+            }}
+            className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100"
+          >
+            Duplicate
+          </button>
+        )}
         <button 
           type={isSubForm ? "button" : "submit"} 
           onClick={isSubForm ? () => handleSubmit() : undefined}
@@ -4687,11 +4897,14 @@ interface QuoteFormProps {
     clients: Client[];
     parts: Part[];
     assemblies: Assembly[];
+    tmItems?: TMItem[];
+    profitSettings?: ProfitSettings;
     materials: Material[];
     operations: Operation[];
     subcontractings: Subcontracting[];
     bendingSettings: BendingSettings;
     laserSettings: LaserSettings;
+    laserTubeSettings: LaserTubeSettings;
     suppliers: Supplier[];
     onSubmit: (quote: Omit<Quote, 'id'> | Quote) => void;
     onCancel: () => void;
@@ -4717,7 +4930,7 @@ interface BatchItem {
     fileStepName?: string;
 }
 
-export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies, materials, operations, subcontractings, suppliers, bendingSettings, laserSettings, onSubmit, onCancel, onAddPart, onAddAssembly, onUpdatePart, onUpdateAssembly, initialData, isSubForm }) => {
+export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies, tmItems = [], profitSettings, materials, operations, subcontractings, suppliers, bendingSettings, laserSettings, laserTubeSettings, onSubmit, onCancel, onAddPart, onAddAssembly, onUpdatePart, onUpdateAssembly, initialData, isSubForm }) => {
     const [name, setName] = useState(initialData?.name || '');
     const [clientId, setClientId] = useState(initialData?.clientId || '');
     const [status, setStatus] = useState<QuoteStatus>(initialData?.status || 'Draft');
@@ -4797,15 +5010,15 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                         quantity: item.quantity,
                         materialId: item.materialId || '',
                         operations: [],
-                        filePdf: item.filePdf,
-                        filePdfName: item.filePdfName,
-                        fileDxf: item.fileDxf,
-                        fileDxfName: item.fileDxfName,
-                        fileStep: item.fileStep,
-                        fileStepName: item.fileStepName
+                        filePdf: item.filePdf || null,
+                        filePdfName: item.filePdfName || null,
+                        fileDxf: item.fileDxf || null,
+                        fileDxfName: item.fileDxfName || null,
+                        fileStep: item.fileStep || null,
+                        fileStepName: item.fileStepName || null
                     };
                     const newId = await onAddPart(partData);
-                    const unitPrice = calculatePartUnitCost({ ...partData, id: newId }, operations, materials, bendingSettings, laserSettings, subcontractings);
+                    const unitPrice = calculatePartUnitCost({ ...partData, id: newId }, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                     newQuoteItems.push({ 
                         tempId: `qitem-${Math.random().toString(36).substring(2, 9)}`,
                         type: 'part', 
@@ -4819,15 +5032,15 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                         quantity: item.quantity,
                         items: [],
                         operations: [],
-                        filePdf: item.filePdf,
-                        filePdfName: item.filePdfName,
-                        fileDxf: item.fileDxf,
-                        fileDxfName: item.fileDxfName,
-                        fileStep: item.fileStep,
-                        fileStepName: item.fileStepName
+                        filePdf: item.filePdf || null,
+                        filePdfName: item.filePdfName || null,
+                        fileDxf: item.fileDxf || null,
+                        fileDxfName: item.fileDxfName || null,
+                        fileStep: item.fileStep || null,
+                        fileStepName: item.fileStepName || null
                     };
                     const newId = await onAddAssembly(assemblyData);
-                    const unitPrice = calculateAssemblyUnitCost({ ...assemblyData, id: newId }, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+                    const unitPrice = calculateAssemblyUnitCost({ ...assemblyData, id: newId }, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                     newQuoteItems.push({ 
                         tempId: `qitem-${Math.random().toString(36).substring(2, 9)}`,
                         type: 'assembly', 
@@ -4864,7 +5077,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
         }
     };
 
-    const handleAddItem = (type: 'part' | 'assembly', id: string) => {
+    const handleAddItem = (type: 'part' | 'assembly' | 'tm-item', id: string) => {
         const tempId = Math.random().toString(36).substring(2, 9);
         let quantity = 1;
         let unitPrice = 0;
@@ -4873,13 +5086,65 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
             const part = parts.find(p => p.id === id);
             if (part) {
                 quantity = part.quantity || 1;
-                unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, subcontractings);
+                unitPrice = calculatePartUnitCost(part, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
             }
-        } else {
+        } else if (type === 'assembly') {
             const assembly = assemblies.find(a => a.id === id);
             if (assembly) {
                 quantity = assembly.quantity || 1;
-                unitPrice = calculateAssemblyUnitCost(assembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+                unitPrice = calculateAssemblyUnitCost(assembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
+            }
+        } else if (type === 'tm-item') {
+            const tmItem = tmItems?.find(t => t.id === id);
+            if (tmItem) {
+                // Calculate sell price
+                const getSubMargin = (cost: number) => {
+                    if (cost <= 1000) return (profitSettings?.subcontractingUnder1000Margin || 30) / 100;
+                    if (cost <= 4999) return (profitSettings?.subcontractingUnder5000Margin || 25) / 100;
+                    return (profitSettings?.subcontractingOver5000Margin || 20) / 100;
+                };
+                
+                let totalSell = 0;
+                // materials
+                let matCost = 0;
+                for (const m of tmItem.materials) {
+                    const mat = materials.find(x => x.id === m.materialId);
+                    if (mat) {
+                        const qty = m.quantity || 1;
+                        if (mat.type?.toLowerCase().includes('plaque') || mat.type?.toLowerCase().includes('sheet')) {
+                             matCost += qty * ((m.width || 0) * (m.length || 0) / 144) * mat.costPerSqFt;
+                        } else if (mat.type?.toLowerCase().includes('tube') || mat.type?.toLowerCase().includes('profile')) {
+                             matCost += qty * ((m.length || 0) / 12) * mat.costPerLinearFt;
+                        } else if (m.weight) {
+                             matCost += qty * m.weight * mat.costPerLb;
+                        }
+                    }
+                }
+                totalSell += matCost * (1 + (profitSettings?.materialMargin || 30) / 100);
+                
+                // ops
+                let opCost = 0;
+                for (const o of tmItem.operations) {
+                    const op = operations.find(x => x.id === o.operationId);
+                    if (op) opCost += o.estimatedTimeHours * op.rate;
+                }
+                totalSell += opCost * (1 + (profitSettings?.operationMargin || 10) / 100);
+                
+                // subs
+                let subSell = 0;
+                for (const s of tmItem.subcontractings) {
+                    subSell += s.globalPrice * (1 + getSubMargin(s.globalPrice));
+                }
+                totalSell += subSell;
+                
+                // purchases
+                let purSell = 0;
+                for (const p of tmItem.purchases) {
+                    purSell += p.globalPrice * (1 + getSubMargin(p.globalPrice));
+                }
+                totalSell += purSell;
+                
+                unitPrice = totalSell;
             }
         }
         
@@ -4890,13 +5155,18 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
         setItems(prev => prev.filter((_, i) => i !== index));
     };
 
-    const availableItems = useMemo(() => items.map(item => ({
-        id: item.tempId!,
-        name: (item.type === 'part' 
-            ? parts.find(p => p.id === item.id)?.name 
-            : assemblies.find(a => a.id === item.id)?.name) || 'Item',
-        quantity: item.quantity
-    })), [items, parts, assemblies]);
+    const availableItems = useMemo(() => items.map(item => {
+        let name = 'Item';
+        if (item.type === 'part') name = parts.find(p => p.id === item.id)?.name || 'Part';
+        else if (item.type === 'assembly') name = assemblies.find(a => a.id === item.id)?.name || 'Assembly';
+        else if (item.type === 'tm-item') name = tmItems?.find(t => t.id === item.id)?.name || 'T-M Item';
+        else if (item.type === 'project') name = item.name || 'Project';
+        return {
+            id: item.tempId!,
+            name,
+            quantity: item.quantity
+        };
+    }), [items, parts, assemblies, tmItems]);
 
     const getItemEffectivePrice = useCallback((item: QuoteItem) => {
         let effectivePrice = item.unitPrice;
@@ -4946,12 +5216,12 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                 if (item.type === 'part') {
                     const part = parts.find(p => p.id === item.id);
                     if (part) {
-                        updatedItem.unitPrice = calculatePartUnitCost({ ...part, quantity: newQuantity }, operations, materials, bendingSettings, laserSettings, subcontractings);
+                        updatedItem.unitPrice = calculatePartUnitCost({ ...part, quantity: newQuantity }, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                     }
                 } else {
                     const assembly = assemblies.find(a => a.id === item.id);
                     if (assembly) {
-                        updatedItem.unitPrice = calculateAssemblyUnitCost({ ...assembly, quantity: newQuantity }, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+                        updatedItem.unitPrice = calculateAssemblyUnitCost({ ...assembly, quantity: newQuantity }, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                     }
                 }
             }
@@ -5015,6 +5285,43 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
 
         items.forEach(item => processItem(item.type, item.id, item.quantity));
         return Object.entries(summary).map(([materialId, totalSqFt]) => ({ materialId, totalSqFt }));
+    }, [items, parts, assemblies]);
+
+    const tubeMaterialSummary = useMemo(() => {
+        interface TubeSummary {
+            materialId: string;
+            totalCutLengthInches: number;
+            totalPieces: number;
+            totalPierces: number;
+        }
+        const summary: { [key: string]: TubeSummary } = {};
+        
+        const processItem = (type: 'part' | 'assembly', id: string, qty: number) => {
+            if (type === 'part') {
+                const part = parts.find(p => p.id === id);
+                if (part && part.materialId) {
+                    const tubeOp = part.operations.find(op => op.laserTubeParams);
+                    if (tubeOp && tubeOp.laserTubeParams) {
+                        const matId = part.materialId;
+                        if (!summary[matId]) {
+                            summary[matId] = { materialId: matId, totalCutLengthInches: 0, totalPieces: 0, totalPierces: 0 };
+                        }
+                        const pQty = qty;
+                        summary[matId].totalPieces += pQty;
+                        summary[matId].totalCutLengthInches += (tubeOp.laserTubeParams.cutLengthInches || 0) * pQty;
+                        summary[matId].totalPierces += (tubeOp.laserTubeParams.numberOfPierces || 0) * pQty;
+                    }
+                }
+            } else {
+                const assembly = assemblies.find(a => a.id === id);
+                if (assembly) {
+                    assembly.items.forEach(item => processItem(item.type, item.id, item.quantity * qty));
+                }
+            }
+        };
+
+        items.forEach(item => processItem(item.type, item.id, item.quantity));
+        return Object.values(summary);
     }, [items, parts, assemblies]);
 
     const validate = () => {
@@ -5081,18 +5388,22 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                 </div>
             )}
 
-            <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-bold text-slate-800">Chat AI</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                <div className="space-y-4 flex flex-col h-[75vh]">
+                    <h3 className="text-lg font-bold text-slate-800">Chat AI</h3>
+                    <div className="flex-1 overflow-hidden flex flex-col">
                         <AiQuoteChatbox quoteId={initialData?.id || 'new'} onUpdateQuote={handleAiUpdate} />
-                        <ApprovalDashboard items={items} onApprove={handleApproveAiItem} onReject={handleRejectAiItem} />
                     </div>
-                    <div className="space-y-4">
-                         <h3 className="text-lg font-bold text-slate-800">Détails de la soumission</h3>
-                         {/* ... existing form fields ... */}
-                    </div>
+                    {items.some(i => i.isAiGenerated && i.aiStatus === 'Pending') && (
+                        <div className="h-48 overflow-y-auto">
+                            <ApprovalDashboard items={items} onApprove={handleApproveAiItem} onReject={handleRejectAiItem} />
+                        </div>
+                    )}
                 </div>
+                <div className="space-y-4 flex flex-col h-[75vh] overflow-y-auto pr-2">
+                    <div className="flex justify-between items-center sticky top-0 bg-white z-10 pb-2 border-b border-slate-200">
+                        <h3 className="text-lg font-bold text-slate-800">Détails de la soumission</h3>
+                    </div>
                 {isLocked && (
                     <div className="bg-amber-50 border border-amber-200 p-3 rounded-md flex items-center gap-3 mb-4">
                         <LockIcon className="w-5 h-5 text-amber-500" />
@@ -5201,12 +5512,15 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                                 onChange={(e) => {
                                     if (e.target.value) {
                                         const [type, id] = e.target.value.split(':');
-                                        handleAddItem(type as 'part' | 'assembly', id);
+                                        handleAddItem(type as 'part' | 'assembly' | 'tm-item', id);
                                         e.target.value = '';
                                     }
                                 }}
                             >
                                 <option value="">Add Existing...</option>
+                                <optgroup label="T-M (Temps-Matériel)">
+                                    {tmItems && tmItems.map(t => <option key={t.id} value={`tm-item:${t.id}`}>{t.name}</option>)}
+                                </optgroup>
                                 <optgroup label="Parts">
                                     {parts.map(p => <option key={p.id} value={`part:${p.id}`}>{p.name}</option>)}
                                 </optgroup>
@@ -5222,6 +5536,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
                         <h4 className="text-xs font-bold text-slate-700 uppercase mb-3">Quick Add Part</h4>
                         <PartForm 
+                            clients={clients}
                             materials={materials} 
                             operations={operations} 
                             suppliers={suppliers}
@@ -5243,6 +5558,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
                         <h4 className="text-xs font-bold text-slate-700 uppercase mb-3">Quick Add Assembly</h4>
                         <AssemblyForm 
+                            clients={clients}
                             parts={parts} 
                             assemblies={assemblies} 
                             operations={operations} 
@@ -5274,11 +5590,13 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                         </div>
                         {editingItem.type === 'part' ? (
                             <PartForm 
+                                clients={clients}
                                 materials={materials} 
                                 operations={operations} 
                                 suppliers={suppliers}
                                 bendingSettings={bendingSettings}
                                 laserSettings={laserSettings}
+                                laserTubeSettings={laserTubeSettings}
                                 subcontractings={subcontractings}
                                 isSubForm={true}
                                 initialData={parts.find(p => p.id === editingItem.id)}
@@ -5286,7 +5604,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                                     if (onUpdatePart) onUpdatePart(data as Part);
                                     // Update unit price in quote items if it was changed
                                     const updatedPart = data as Part;
-                                    const newPrice = calculatePartUnitCost(updatedPart, operations, materials, bendingSettings, laserSettings, subcontractings);
+                                    const newPrice = calculatePartUnitCost(updatedPart, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                                     setItems(prev => prev.map(item => 
                                         (item.type === 'part' && item.id === updatedPart.id) 
                                             ? { ...item, unitPrice: newPrice } 
@@ -5298,6 +5616,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                             />
                         ) : (
                             <AssemblyForm 
+                                clients={clients}
                                 parts={parts} 
                                 assemblies={assemblies} 
                                 operations={operations} 
@@ -5305,6 +5624,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                                 suppliers={suppliers}
                                 bendingSettings={bendingSettings}
                                 laserSettings={laserSettings}
+                                laserTubeSettings={laserTubeSettings}
                                 subcontractings={subcontractings}
                                 isSubForm={true}
                                 initialData={assemblies.find(a => a.id === editingItem.id)}
@@ -5312,7 +5632,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                                     if (onUpdateAssembly) onUpdateAssembly(data as Assembly);
                                     // Update unit price in quote items if it was changed
                                     const updatedAssembly = data as Assembly;
-                                    const newPrice = calculateAssemblyUnitCost(updatedAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, subcontractings);
+                                    const newPrice = calculateAssemblyUnitCost(updatedAssembly, parts, assemblies, operations, materials, bendingSettings, laserSettings, laserTubeSettings, subcontractings);
                                     setItems(prev => prev.map(item => 
                                         (item.type === 'assembly' && item.id === updatedAssembly.id) 
                                             ? { ...item, unitPrice: newPrice } 
@@ -5430,9 +5750,11 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                 
                 <div className="space-y-2">
                     {items.map((item, index) => {
-                        const label = item.type === 'part' 
-                            ? parts.find(p => p.id === item.id)?.name 
-                            : assemblies.find(a => a.id === item.id)?.name;
+                        let label = 'Unknown';
+                        if (item.type === 'part') label = parts.find(p => p.id === item.id)?.name || 'Part';
+                        else if (item.type === 'assembly') label = assemblies.find(a => a.id === item.id)?.name || 'Assembly';
+                        else if (item.type === 'tm-item') label = tmItems.find(t => t.id === item.id)?.name || 'T-M Item';
+                        else if (item.type === 'project') label = item.name || 'Project';
                         
                         const effectivePrice = getItemEffectivePrice(item);
                         const hasSubcontracting = subcontractingItems.some(si => si.targetItemIds?.includes(item.tempId!));
@@ -5552,7 +5874,67 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                 </div>
             </div>
 
-            <div className="flex justify-end space-x-2 pt-4">
+            <div className="border-t border-slate-200 pt-4 mt-4">
+                <h3 className="text-sm font-medium text-slate-700 mb-2">Sommaire Laser Tube</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {tubeMaterialSummary.map(ts => {
+                        const mat = materials.find(m => m.id === ts.materialId);
+                        const matThickness = mat?.thickness || 0.125;
+                        const totalLengthWithSpacing = ts.totalCutLengthInches + (ts.totalPieces * matThickness);
+                        
+                        // Calculation for 20ft and 24ft bars (240 and 288 inches)
+                        const bar20 = 240;
+                        const bar24 = 288;
+                        const bars20Needed = Math.ceil(totalLengthWithSpacing / bar20);
+                        const bars24Needed = Math.ceil(totalLengthWithSpacing / bar24);
+
+                        return (
+                        <div key={ts.materialId} className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-2 shadow-sm">
+                            <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                                <span className="text-sm font-bold text-slate-800">
+                                    {mat?.description || mat?.name || 'Matériel inconnu'}
+                                </span>
+                                <span className="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded-lg font-medium">
+                                    {ts.totalPieces} pcs | {ts.totalPierces} perçages
+                                </span>
+                            </div>
+                            
+                            <div className="text-xs text-slate-600 flex justify-between">
+                                <span>Longueur totale (avec espacement):</span>
+                                <span className="font-medium">{(totalLengthWithSpacing / 12).toFixed(1)} pi</span>
+                            </div>
+                            
+                            <div className="mt-2 space-y-1">
+                                <div className="text-xs flex justify-between items-center bg-white border border-slate-200 p-1.5 rounded">
+                                    <span className="text-slate-500">Barres de 20 pi:</span>
+                                    <span className="font-bold text-[#0078d4]">{bars20Needed}</span>
+                                </div>
+                                <div className="text-xs flex justify-between items-center bg-white border border-slate-200 p-1.5 rounded">
+                                    <span className="text-slate-500">Barres de 24 pi:</span>
+                                    <span className="font-bold text-[#0078d4]">{bars24Needed}</span>
+                                </div>
+                            </div>
+                            
+                            <button
+                                type="button"
+                                className="mt-2 w-full flex justify-center items-center gap-2 bg-purple-100 text-purple-700 hover:bg-purple-200 py-2 rounded-lg text-xs font-bold transition-colors"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    alert('Nesting IA en cours de développement...');
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                                Optimiser Nesting (IA)
+                            </button>
+                        </div>
+                    )})}
+                    {tubeMaterialSummary.length === 0 && (
+                        <p className="text-xs text-slate-400 italic">Aucun matériel tube requis.</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 sticky bottom-0 bg-white z-10 pb-2">
                 <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
                     {isLocked ? 'Fermer' : 'Annuler'}
                 </button>
@@ -5565,6 +5947,7 @@ export const QuoteForm: React.FC<QuoteFormProps> = ({ clients, parts, assemblies
                       {initialData ? 'Update Quote' : 'Create Quote'}
                     </button>
                 )}
+            </div>
             </div>
             </div>
         </FormContainer>
@@ -5642,9 +6025,9 @@ export const SubcontractingForm: React.FC<SubcontractingFormProps> = ({
             const data: Partial<Subcontracting> = {
                 name: name.trim(),
                 defaultCost,
-                cost: linkType !== 'none' ? cost : undefined,
-                applyType: (linkType === 'workOrder' || linkType === 'quote') ? applyType : undefined,
-                targetItemIds: (linkType === 'workOrder' || linkType === 'quote') ? targetItemIds : undefined,
+                cost: linkType !== 'none' ? cost : null,
+                applyType: (linkType === 'workOrder' || linkType === 'quote') ? applyType : null,
+                targetItemIds: (linkType === 'workOrder' || linkType === 'quote') ? targetItemIds : null,
                 supplierLinks
             };
             
@@ -5916,13 +6299,13 @@ export const PurchaseForm: React.FC<{
         e.preventDefault();
         onSubmit({
             supplierId,
-            quoteId: quoteId || undefined,
-            workOrderId: workOrderId || undefined,
+            quoteId: quoteId || null,
+            workOrderId: workOrderId || null,
             items,
             isSent,
-            sentDate: isSent ? sentDate : undefined,
+            sentDate: isSent ? sentDate : null,
             isReceived,
-            receivedDate: isReceived ? receivedDate : undefined,
+            receivedDate: isReceived ? receivedDate : null,
             totalAmount,
             notes
         });

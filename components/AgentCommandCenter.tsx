@@ -41,7 +41,7 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
 
     // Simple command parser: /agent [id] set [field] [value]
     const parts = trimmed.split(' ');
-    const command = parts[0].toLowerCase();
+    const command = parts[0]?.toLowerCase() || '';
 
     if (command === '/help') {
       addOutput('Commandes disponibles :');

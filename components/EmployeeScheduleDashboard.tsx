@@ -293,35 +293,55 @@ export const EmployeeScheduleDashboard: React.FC<EmployeeScheduleDashboardProps>
       `;
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    justification: { type: Type.STRING },
-                    proposals: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                workOrderId: { type: Type.STRING },
-                                partInstanceIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-                                operationId: { type: Type.STRING },
-                                employeeIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-                                scheduledDate: { type: Type.STRING }
-                            },
-                        }
-                    }
-                },
-                required: ["justification", "proposals"]
-            }
-        }
-      });
+      let response;
+      let retries = 3;
+      let delay = 1000;
 
-      if (!response.text) {
+      while (retries > 0) {
+        try {
+          response = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        justification: { type: Type.STRING },
+                        proposals: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    workOrderId: { type: Type.STRING },
+                                    partInstanceIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    operationId: { type: Type.STRING },
+                                    employeeIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    scheduledDate: { type: Type.STRING }
+                                },
+                            }
+                        }
+                    },
+                    required: ["justification", "proposals"]
+                }
+            }
+          });
+          break; // success
+        } catch (error: unknown) {
+          const errorStr = error instanceof Error ? error.message : String(error);
+          if (errorStr.includes('503') || errorStr.includes('UNAVAILABLE') || errorStr.includes('high demand')) {
+            retries--;
+            if (retries === 0) throw error;
+            console.warn(`Retry ${retries} after ${delay}ms due to 503 error.`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      if (!response || !response.text) {
         throw new Error('No response from AI');
       }
 
@@ -429,7 +449,7 @@ export const EmployeeScheduleDashboard: React.FC<EmployeeScheduleDashboardProps>
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
       const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesSkill = !selectedSkillId || emp.skills.some(s => s.skillId === selectedSkillId);
+      const matchesSkill = !selectedSkillId || (emp.skills || []).some(s => s.skillId === selectedSkillId);
       return matchesSearch && matchesSkill;
     });
   }, [employees, searchTerm, selectedSkillId]);
@@ -621,7 +641,7 @@ export const EmployeeScheduleDashboard: React.FC<EmployeeScheduleDashboardProps>
                             <div>
                               <div className="text-sm font-semibold text-slate-900">{emp.name}</div>
                               <div className="flex flex-wrap gap-1 mt-1">
-                                {emp.skills.slice(0, 2).map(s => {
+                                {(emp.skills || []).slice(0, 2).map(s => {
                                   const skill = skills.find(sk => sk.id === s.skillId);
                                   return (
                                     <span key={s.skillId} className="text-[8px] bg-slate-100 text-slate-500 px-1 rounded uppercase font-bold">
@@ -629,7 +649,7 @@ export const EmployeeScheduleDashboard: React.FC<EmployeeScheduleDashboardProps>
                                     </span>
                                   );
                                 })}
-                                {emp.skills.length > 2 && <span className="text-[8px] text-slate-400">+{emp.skills.length - 2}</span>}
+                                {(emp.skills || []).length > 2 && <span className="text-[8px] text-slate-400">+{(emp.skills || []).length - 2}</span>}
                               </div>
                             </div>
                           </div>
@@ -696,7 +716,7 @@ export const EmployeeScheduleDashboard: React.FC<EmployeeScheduleDashboardProps>
                                       key={op.id} 
                                       op={op} 
                                       isAssigned 
-                                      isQualified={!op.requiredSkillId || emp.skills.some(s => s.skillId === op.requiredSkillId)}
+                                      isQualified={!op.requiredSkillId || (emp.skills || []).some(s => s.skillId === op.requiredSkillId)}
                                       onSplit={(op) => { setSplittingOp(op); setSplitValue(Math.floor(op.quantity / 2) || 1); }}
                                       onDone={handleDone}
                                       onToggleLock={handleToggleLock}
